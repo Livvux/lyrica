@@ -1,0 +1,43 @@
+{
+  "name": "lyrica",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.436",
+    "@remotion/cli": "^4.0.436",
+    "@remotion/media-utils": "^4.0.436",
+    "@remotion/player": "^4.0.436",
+    "@remotion/renderer": "^4.0.436",
+    "groq-sdk": "^1.1.1",
+    "next": "^16.1.7",
+    "openai": "^6.32.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "remotion": "^4.0.436"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp",
+      "unrs-resolver"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.28.0",
+    "eslint-config-next": "^16.2.0",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,49 @@
+import { mkdir } from "fs/promises";
+import path from "path";
+import { randomUUID } from "crypto";
+import { renderVideo } from "@/lib/render-video";
+import { cleanupTmpFiles } from "@/lib/cleanup-tmp";
+import type { VideoConfig } from "@/types/lyrics";
+
+const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
+
+export async function POST(request: Request) {
+  // Clean up old tmp files (non-blocking)
+  cleanupTmpFiles();
+
+  const config: VideoConfig = await request.json();
+
+  await mkdir(TMP_DIR, { recursive: true });
+  const outputFilename = `${randomUUID()}.mp4`;
+  const outputPath = path.join(TMP_DIR, outputFilename);
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: Record<string, unknown>) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+
+      try {
+        await renderVideo(config, outputPath, (p) => {
+          send({ phase: p.phase, progress: p.progress });
+        });
+
+        send({ phase: "done", filename: outputFilename });
+      } catch (e) {
+        console.error("Render error:", e);
+        send({ phase: "error", error: "Fehler beim Rendern des Videos." });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
