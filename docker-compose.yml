@@ -10,11 +10,28 @@ services:
     volumes:
       - lyrica-tmp:/app/tmp/lyrica
     env_file: .env.production
+    environment:
+      # Node.js Heap: verhindert GC-Druck bei langen Renders
+      NODE_OPTIONS: "--max-old-space-size=8192"
     # Chromium-Sandbox in Docker benötigt SYS_ADMIN
     cap_add:
       - SYS_ADMIN
     # Chrome nutzt /dev/shm intensiv
     shm_size: 2gb
+    # Ressourcen: 10 von 12 CPUs, 16 GB RAM-Limit
+    deploy:
+      resources:
+        limits:
+          cpus: "10"
+          memory: 16G
+        reservations:
+          cpus: "2"
+          memory: 512M
+    # Chromium öffnet viele File Descriptors
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
 volumes:
   lyrica-tmp:
