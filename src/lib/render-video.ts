@@ -16,6 +16,19 @@ export type RenderProgress = {
 
 // Cache the bundle location across renders — only changes when code changes (dev restart)
 let cachedBundleLocation: string | null = null;
+let bundlePromise: Promise<string> | null = null;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const webpackOverride = (currentConfig: any) => ({
+  ...currentConfig,
+  resolve: {
+    ...currentConfig.resolve,
+    alias: {
+      ...(currentConfig.resolve?.alias ?? {}),
+      "@": path.join(process.cwd(), "src"),
+    },
+  },
+});
 
 async function getOrCreateBundle(
   onProgress?: (p: RenderProgress) => void
@@ -25,25 +38,37 @@ async function getOrCreateBundle(
     return cachedBundleLocation;
   }
 
+  // Deduplicate concurrent bundle requests (e.g. pre-bundle + first render race)
+  if (bundlePromise) {
+    const location = await bundlePromise;
+    onProgress?.({ phase: "bundling", progress: 1 });
+    return location;
+  }
+
   const entryPoint = path.join(process.cwd(), "src/remotion/index.ts");
 
-  const location = await bundle({
+  bundlePromise = bundle({
     entryPoint,
     onProgress: (p) => onProgress?.({ phase: "bundling", progress: p / 100 }),
-    webpackOverride: (currentConfig) => ({
-      ...currentConfig,
-      resolve: {
-        ...currentConfig.resolve,
-        alias: {
-          ...(currentConfig.resolve?.alias ?? {}),
-          "@": path.join(process.cwd(), "src"),
-        },
-      },
-    }),
+    webpackOverride,
   });
 
+  const location = await bundlePromise;
   cachedBundleLocation = location;
+  bundlePromise = null;
   return location;
+}
+
+/**
+ * Pre-bundle Remotion at startup so the first render doesn't pay the bundling cost.
+ * Called from instrumentation.ts on server start.
+ */
+export async function preBundleRemotionIfNeeded(): Promise<void> {
+  if (cachedBundleLocation) return;
+  const start = Date.now();
+  console.log("[remotion] Pre-bundling started…");
+  await getOrCreateBundle();
+  console.log(`[remotion] Pre-bundling done in ${((Date.now() - start) / 1000).toFixed(1)}s`);
 }
 
 /**
@@ -139,9 +164,10 @@ export async function renderVideo(
     });
 
     const cpus = os.cpus().length;
+    // Use more available cores: server has 10 CPUs allocated
     const concurrency = isDraft
-      ? Math.min(2, cpus)
-      : Math.min(Math.max(1, cpus - 1), 4);
+      ? Math.min(4, cpus)
+      : Math.min(Math.max(2, cpus - 2), 8);
 
     await renderMedia({
       composition,
@@ -155,12 +181,12 @@ export async function renderVideo(
       // 5 Minuten Timeout pro Frame — nötig für große Audiodateien (getAudioData)
       timeoutInMilliseconds: 300_000,
       videoBitrate: isDraft ? "4M" : "8M",
-      x264Preset: isDraft ? "ultrafast" : "faster",
-      jpegQuality: isDraft ? 60 : 70,
+      x264Preset: isDraft ? "ultrafast" : "veryfast",
+      jpegQuality: isDraft ? 60 : 80,
       imageFormat: "jpeg",
       chromiumOptions: {
         gl: "swiftshader",
-        enableMultiProcessOnLinux: false,
+        enableMultiProcessOnLinux: true,
       },
       onProgress: ({ progress }) =>
         onProgress?.({ phase: "rendering", progress }),
