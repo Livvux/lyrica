@@ -102,11 +102,18 @@ async function resizeBgIfNeeded(
   }
 }
 
+export type RenderCallbacks = {
+  onProgress?: (p: RenderProgress) => void;
+  onLog?: (message: string) => void;
+};
+
 export async function renderVideo(
   config: VideoConfig,
   outputPath: string,
-  onProgress?: (p: RenderProgress) => void
+  callbacks?: RenderCallbacks
 ): Promise<string> {
+  const { onProgress, onLog } = callbacks ?? {};
+  const log = (msg: string) => onLog?.(msg);
   const publicDir = path.join(process.cwd(), "public");
   const tmpDir = path.join(process.cwd(), "tmp", "lyrica");
 
@@ -115,9 +122,13 @@ export async function renderVideo(
   const renderHeight = isDraft ? 720 : 1080;
   const renderFps = isDraft ? 24 : 30;
 
-  // Recalculate frame count for the target fps
   const durationSec = config.durationInFrames / config.fps;
   const renderFrameCount = Math.ceil(durationSec * renderFps);
+
+  log(`Qualität: ${isDraft ? "Draft 720p" : "Full 1080p"}`);
+  log(`Auflösung: ${renderWidth}x${renderHeight} @ ${renderFps}fps`);
+  log(`Dauer: ${durationSec.toFixed(1)}s → ${renderFrameCount} Frames`);
+  log(`Lyrics: ${config.lines.length} Zeilen`);
 
   const tmpFilesToClean: string[] = [];
   const audioFilename = config.audioUrl.split("/").pop()!;
@@ -128,6 +139,7 @@ export async function renderVideo(
     const bgFilename = config.style.bgImage.split("/").pop()!;
     const bgSrc = path.join(tmpDir, bgFilename);
     const bgDest = path.join(publicDir, bgFilename);
+    log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
     await resizeBgIfNeeded(bgSrc, bgDest, renderWidth, renderHeight);
     tmpFilesToClean.push(bgDest);
     bgImageForRender = `/${bgFilename}`;
@@ -135,7 +147,6 @@ export async function renderVideo(
 
   const renderConfig: VideoConfig = {
     ...config,
-    // Placeholder — replaced with bundle-relative URL after bundling
     audioUrl: audioFilename,
     style: { ...config.style, bgImage: bgImageForRender },
     width: renderWidth,
@@ -145,9 +156,13 @@ export async function renderVideo(
   };
 
   try {
+    log("Remotion-Bundle wird geladen…");
+    const bundleStart = Date.now();
     const bundleLocation = await getOrCreateBundle(onProgress);
+    log(`Bundle bereit (${((Date.now() - bundleStart) / 1000).toFixed(1)}s)`);
 
     // Copy audio + bg into bundle dir so Remotion serves them same-origin (no CORS)
+    log("Audio wird ins Bundle kopiert…");
     const audioSrc = path.join(tmpDir, audioFilename);
     const audioDest = path.join(bundleLocation, audioFilename);
     await copyFile(audioSrc, audioDest);
@@ -159,28 +174,33 @@ export async function renderVideo(
       const bgDest = path.join(bundleLocation, bgFilename);
       await copyFile(bgSrc, bgDest);
       tmpFilesToClean.push(bgDest);
+      log("Hintergrundbild ins Bundle kopiert");
     }
 
-    // Use bundle-relative URLs (served by Remotion's dev server, same origin)
     renderConfig.audioUrl = `/${audioFilename}`;
 
     const inputProps = renderConfig as unknown as Record<string, unknown>;
-
-    // Auf Linux (Docker) Chrome-Wrapper mit --no-sandbox verwenden
     const browserExecutable = process.env.CHROME_EXECUTABLE ?? null;
 
+    log("Composition wird ermittelt…");
     const composition = await selectComposition({
       serveUrl: bundleLocation,
       id: "LyricsVideo",
       inputProps,
       browserExecutable,
     });
+    log(`Composition: ${composition.width}x${composition.height}, ${composition.durationInFrames} Frames`);
 
     const cpus = os.cpus().length;
-    // Use more available cores: server has 10 CPUs allocated
     const concurrency = isDraft
       ? Math.min(4, cpus)
       : Math.min(Math.max(2, cpus - 2), 8);
+
+    log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
+    log(`Codec: H.264, Bitrate: ${isDraft ? "4M" : "8M"}, Preset: ${isDraft ? "ultrafast" : "veryfast"}`);
+
+    const renderStart = Date.now();
+    let lastLoggedPercent = 0;
 
     await renderMedia({
       composition,
@@ -191,7 +211,6 @@ export async function renderVideo(
       concurrency,
       browserExecutable,
       hardwareAcceleration: "disable",
-      // 5 Minuten Timeout pro Frame — nötig für große Audiodateien (getAudioData)
       timeoutInMilliseconds: 300_000,
       videoBitrate: isDraft ? "4M" : "8M",
       x264Preset: isDraft ? "ultrafast" : "veryfast",
@@ -201,9 +220,23 @@ export async function renderVideo(
         gl: "swiftshader",
         enableMultiProcessOnLinux: true,
       },
-      onProgress: ({ progress }) =>
-        onProgress?.({ phase: "rendering", progress }),
+      onProgress: ({ progress }) => {
+        onProgress?.({ phase: "rendering", progress });
+        const percent = Math.round(progress * 100);
+        if (percent >= lastLoggedPercent + 10) {
+          const elapsed = (Date.now() - renderStart) / 1000;
+          const eta = progress > 0 ? (elapsed / progress) * (1 - progress) : 0;
+          log(`Frame-Rendering: ${percent}% (${elapsed.toFixed(0)}s vergangen, ~${eta.toFixed(0)}s verbleibend)`);
+          lastLoggedPercent = percent;
+        }
+      },
     });
+
+    const totalTime = ((Date.now() - renderStart) / 1000).toFixed(1);
+    log(`Rendering abgeschlossen in ${totalTime}s`);
+
+    const outputStat = await stat(outputPath);
+    log(`Video: ${(outputStat.size / 1024 / 1024).toFixed(1)} MB`);
 
     return outputPath;
   } finally {

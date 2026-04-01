@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { VideoConfig, RenderQuality } from "@/types/lyrics";
 
 interface ExportButtonProps {
@@ -16,8 +16,23 @@ type RenderState =
 
 export function ExportButton({ config }: ExportButtonProps) {
   const [state, setState] = useState<RenderState>({ status: "idle" });
+  const [logs, setLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  function addLog(message: string) {
+    const ts = new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setLogs((prev) => [...prev, `[${ts}] ${message}`]);
+  }
 
   async function handleExport(quality: RenderQuality) {
+    setLogs([]);
+    setShowLogs(true);
+    addLog(`Export gestartet: ${quality === "draft" ? "Draft 720p" : "Full 1080p"}`);
     setState({ status: "bundling", progress: 0 });
 
     const exportConfig: VideoConfig = {
@@ -53,9 +68,13 @@ export function ExportButton({ config }: ExportButtonProps) {
             setState({ status: "bundling", progress: data.progress });
           } else if (data.phase === "rendering") {
             setState({ status: "rendering", progress: data.progress });
+          } else if (data.phase === "log") {
+            addLog(data.message);
           } else if (data.phase === "done") {
+            addLog("Video fertig, Download startet…");
             downloadFilename = data.filename;
           } else if (data.phase === "error") {
+            addLog(`FEHLER: ${data.error}`);
             setState({ status: "error", message: data.error });
           }
         }
@@ -149,6 +168,26 @@ export function ExportButton({ config }: ExportButtonProps) {
           >
             Schließen
           </button>
+        </div>
+      )}
+      {logs.length > 0 && (
+        <div className="mt-1">
+          <button
+            onClick={() => setShowLogs((v) => !v)}
+            className="mb-1 text-xs text-white/40 transition hover:text-white/60"
+          >
+            {showLogs ? "▼ Debug-Log ausblenden" : "▶ Debug-Log anzeigen"}
+          </button>
+          {showLogs && (
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-black/60 p-3 font-mono text-xs leading-relaxed text-white/60">
+              {logs.map((line, i) => (
+                <div key={i} className={line.includes("FEHLER") ? "text-red-400" : ""}>
+                  {line}
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
+          )}
         </div>
       )}
     </div>

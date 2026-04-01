@@ -29,13 +29,20 @@ export async function POST(request: Request) {
       };
 
       try {
-        await renderVideo(config, outputPath, (p) => {
-          send({ phase: p.phase, progress: p.progress });
+        await renderVideo(config, outputPath, {
+          onProgress: (p) => {
+            send({ phase: p.phase, progress: p.progress });
+          },
+          onLog: (message) => {
+            send({ phase: "log", message });
+          },
         });
 
         send({ phase: "done", filename: outputFilename });
       } catch (e) {
         console.error("Render error:", e);
+        const errorMsg = e instanceof Error ? e.message : "Unbekannter Fehler";
+        send({ phase: "log", message: `FEHLER: ${errorMsg}` });
         send({ phase: "error", error: "Fehler beim Rendern des Videos." });
       } finally {
         controller.close();
