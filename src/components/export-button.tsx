@@ -14,10 +14,65 @@ type RenderState =
   | { status: "downloading" }
   | { status: "error"; message: string };
 
+interface RenderMetrics {
+  fps: number;
+  framesRendered: number;
+  totalFrames: number;
+  elapsedSec: number;
+  etaSec: number;
+  cpu: {
+    cpuPercent: number;
+    memUsedMb: number;
+    memTotalMb: number;
+    memPercent: number;
+  };
+}
+
+interface RenderSummary {
+  totalFrames: number;
+  totalTimeSec: number;
+  avgFps: number;
+  concurrency: number;
+  cpuCount: number;
+  peakCpuPercent: number;
+  peakMemMb: number;
+  memTotalMb: number;
+  resolution: string;
+  quality: string;
+  hints: string[];
+}
+
+function formatTime(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}m ${s}s`;
+}
+
+function MeterBar({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
+  const pct = Math.min(Math.round((value / max) * 100), 100);
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex justify-between text-[10px] text-white/50">
+        <span>{label}</span>
+        <span className="tabular-nums">{pct}%</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full transition-all duration-1000 ease-out"
+          style={{ width: `${pct}%`, backgroundColor: color }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ExportButton({ config }: ExportButtonProps) {
   const [state, setState] = useState<RenderState>({ status: "idle" });
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [metrics, setMetrics] = useState<RenderMetrics | null>(null);
+  const [summary, setSummary] = useState<RenderSummary | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,7 +86,9 @@ export function ExportButton({ config }: ExportButtonProps) {
 
   async function handleExport(quality: RenderQuality) {
     setLogs([]);
-    setShowLogs(true);
+    setShowLogs(false);
+    setMetrics(null);
+    setSummary(null);
     addLog(`Export gestartet: ${quality === "draft" ? "Draft 720p" : "Full 1080p"}`);
     setState({ status: "bundling", progress: 0 });
 
@@ -70,6 +127,10 @@ export function ExportButton({ config }: ExportButtonProps) {
             setState({ status: "rendering", progress: data.progress });
           } else if (data.phase === "log") {
             addLog(data.message);
+          } else if (data.phase === "metrics") {
+            setMetrics(data.metrics);
+          } else if (data.phase === "summary") {
+            setSummary(data.summary);
           } else if (data.phase === "done") {
             addLog("Video fertig, Download startet…");
             downloadFilename = data.filename;
@@ -87,7 +148,6 @@ export function ExportButton({ config }: ExportButtonProps) {
         buffer += decoder.decode(value, { stream: true });
         buffer = processLines(buffer);
       }
-      // Process any remaining data in buffer
       if (buffer.trim()) processLines(buffer + "\n\n");
 
       if (!downloadFilename) {
@@ -112,7 +172,6 @@ export function ExportButton({ config }: ExportButtonProps) {
   }
 
   const isActive = state.status !== "idle" && state.status !== "error";
-  // Bundling is usually instant (cached), so give it 5%. Rendering is the real work (90%). Download 5%.
   const progress =
     state.status === "bundling"
       ? state.progress * 0.05
@@ -136,17 +195,60 @@ export function ExportButton({ config }: ExportButtonProps) {
   return (
     <div className="flex flex-col gap-2">
       {isActive ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between text-sm text-white/80">
-            <span className="font-medium">{label}</span>
-            <span className="tabular-nums font-semibold">{percent}%</span>
+        <div className="flex flex-col gap-3">
+          {/* Progress bar */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-sm text-white/80">
+              <span className="font-medium">{label}</span>
+              <span className="tabular-nums font-semibold">{percent}%</span>
+            </div>
+            <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-white transition-all duration-500 ease-out"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
           </div>
-          <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-white transition-all duration-500 ease-out"
-              style={{ width: `${percent}%` }}
-            />
-          </div>
+
+          {/* Live metrics panel */}
+          {metrics && (
+            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+              <div className="mb-2 grid grid-cols-4 gap-3 text-center">
+                <div>
+                  <div className="text-lg font-bold tabular-nums text-white">{metrics.fps}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-white/40">FPS</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold tabular-nums text-white">{metrics.framesRendered}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-white/40">
+                    / {metrics.totalFrames}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold tabular-nums text-white">{formatTime(metrics.elapsedSec)}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-white/40">Vergangen</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold tabular-nums text-white">~{formatTime(metrics.etaSec)}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-white/40">Verbleibend</div>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <MeterBar
+                  value={metrics.cpu.cpuPercent}
+                  max={100}
+                  color={metrics.cpu.cpuPercent > 80 ? "#ef4444" : metrics.cpu.cpuPercent > 50 ? "#eab308" : "#22c55e"}
+                  label={`CPU ${metrics.cpu.cpuPercent}%`}
+                />
+                <MeterBar
+                  value={metrics.cpu.memUsedMb}
+                  max={metrics.cpu.memTotalMb}
+                  color={metrics.cpu.memPercent > 80 ? "#ef4444" : metrics.cpu.memPercent > 50 ? "#eab308" : "#3b82f6"}
+                  label={`RAM ${metrics.cpu.memUsedMb} MB / ${metrics.cpu.memTotalMb} MB`}
+                />
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex gap-3">
@@ -164,6 +266,64 @@ export function ExportButton({ config }: ExportButtonProps) {
           </button>
         </div>
       )}
+
+      {/* Performance summary after render */}
+      {summary && !isActive && (
+        <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/60">
+            Performance-Übersicht
+          </div>
+          <div className="mb-2 grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="rounded-md bg-white/5 px-2 py-1.5">
+              <div className="font-bold tabular-nums text-white">{summary.avgFps} fps</div>
+              <div className="text-white/40">Render-Speed</div>
+            </div>
+            <div className="rounded-md bg-white/5 px-2 py-1.5">
+              <div className="font-bold tabular-nums text-white">{formatTime(summary.totalTimeSec)}</div>
+              <div className="text-white/40">Gesamtdauer</div>
+            </div>
+            <div className="rounded-md bg-white/5 px-2 py-1.5">
+              <div className="font-bold tabular-nums text-white">{summary.concurrency}x</div>
+              <div className="text-white/40">Worker</div>
+            </div>
+          </div>
+          <div className="mb-2 grid grid-cols-2 gap-2 text-center text-xs">
+            <div className="rounded-md bg-white/5 px-2 py-1.5">
+              <div className="font-bold tabular-nums text-white">{summary.peakCpuPercent}%</div>
+              <div className="text-white/40">Peak CPU</div>
+            </div>
+            <div className="rounded-md bg-white/5 px-2 py-1.5">
+              <div className="font-bold tabular-nums text-white">{summary.peakMemMb} MB</div>
+              <div className="text-white/40">Peak RAM</div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            {summary.hints.map((hint, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-xs text-white/50">
+                <span className="mt-0.5 shrink-0">
+                  {hint.includes("gut") || hint.includes("passt") || hint.includes("schnell") || hint.includes("exzellent")
+                    ? "●"
+                    : hint.includes("knapp") || hint.includes("langsam") || hint.includes("massiv")
+                      ? "●"
+                      : "●"}
+                </span>
+                <span
+                  className={
+                    hint.includes("gut") || hint.includes("passt") || hint.includes("schnell") || hint.includes("exzellent")
+                      ? "text-green-400/70"
+                      : hint.includes("knapp") || hint.includes("langsam") || hint.includes("massiv")
+                        ? "text-amber-400/70"
+                        : "text-white/50"
+                  }
+                >
+                  {hint}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {state.status === "error" && (
         <div className="flex items-center justify-center gap-2">
           <p className="text-sm text-red-400">{state.message}</p>
@@ -175,6 +335,7 @@ export function ExportButton({ config }: ExportButtonProps) {
           </button>
         </div>
       )}
+
       {logs.length > 0 && (
         <div className="mt-1">
           <button

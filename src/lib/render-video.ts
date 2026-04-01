@@ -6,8 +6,18 @@ import { promisify } from "util";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import type { VideoConfig } from "@/types/lyrics";
+import { collectMetrics, generateHints, type RenderSummary, type SystemMetrics } from "./system-metrics";
 
 const execFileAsync = promisify(execFile);
+
+export type RenderMetrics = {
+  fps: number;
+  framesRendered: number;
+  totalFrames: number;
+  elapsedSec: number;
+  etaSec: number;
+  cpu: SystemMetrics;
+};
 
 export type RenderProgress = {
   phase: "bundling" | "rendering" | "done";
@@ -105,6 +115,8 @@ async function resizeBgIfNeeded(
 export type RenderCallbacks = {
   onProgress?: (p: RenderProgress) => void;
   onLog?: (message: string) => void;
+  onMetrics?: (m: RenderMetrics) => void;
+  onSummary?: (s: RenderSummary) => void;
 };
 
 export async function renderVideo(
@@ -112,7 +124,7 @@ export async function renderVideo(
   outputPath: string,
   callbacks?: RenderCallbacks
 ): Promise<string> {
-  const { onProgress, onLog } = callbacks ?? {};
+  const { onProgress, onLog, onMetrics, onSummary } = callbacks ?? {};
   const log = (msg: string) => onLog?.(msg);
   const publicDir = path.join(process.cwd(), "public");
   const tmpDir = path.join(process.cwd(), "tmp", "lyrica");
@@ -203,6 +215,12 @@ export async function renderVideo(
 
     const renderStart = Date.now();
     let lastLoggedPercent = 0;
+    let peakCpuPercent = 0;
+    let peakMemMb = 0;
+    let lastMetricsTime = 0;
+
+    // Collect initial CPU sample (first call is always 0)
+    await collectMetrics();
 
     await renderMedia({
       composition,
@@ -224,22 +242,71 @@ export async function renderVideo(
       },
       onProgress: ({ progress }) => {
         onProgress?.({ phase: "rendering", progress });
+        const now = Date.now();
+        const elapsed = (now - renderStart) / 1000;
         const percent = Math.round(progress * 100);
+        const framesRendered = Math.round(progress * renderFrameCount);
+        const fps = elapsed > 0 ? framesRendered / elapsed : 0;
+        const eta = progress > 0 ? (elapsed / progress) * (1 - progress) : 0;
+
         if (percent >= lastLoggedPercent + 10) {
-          const elapsed = (Date.now() - renderStart) / 1000;
-          const eta = progress > 0 ? (elapsed / progress) * (1 - progress) : 0;
           log(`Frame-Rendering: ${percent}% (${elapsed.toFixed(0)}s vergangen, ~${eta.toFixed(0)}s verbleibend)`);
           lastLoggedPercent = percent;
+        }
+
+        // Send metrics every 2 seconds
+        if (now - lastMetricsTime >= 2000) {
+          lastMetricsTime = now;
+          collectMetrics().then((cpu) => {
+            if (cpu.cpuPercent > peakCpuPercent) peakCpuPercent = cpu.cpuPercent;
+            if (cpu.memUsedMb > peakMemMb) peakMemMb = cpu.memUsedMb;
+            onMetrics?.({
+              fps: Math.round(fps * 10) / 10,
+              framesRendered,
+              totalFrames: renderFrameCount,
+              elapsedSec: Math.round(elapsed),
+              etaSec: Math.round(eta),
+              cpu,
+            });
+          });
         }
       },
     });
 
-    const totalTime = ((Date.now() - renderStart) / 1000).toFixed(1);
-    log(`Rendering abgeschlossen in ${totalTime}s`);
-    console.log(`[render] ${renderFrameCount} frames in ${totalTime}s (${(renderFrameCount / parseFloat(totalTime)).toFixed(1)} fps), concurrency=${concurrency}`);
+    const totalTimeSec = (Date.now() - renderStart) / 1000;
+    const avgFps = renderFrameCount / totalTimeSec;
+
+    log(`Rendering abgeschlossen in ${totalTimeSec.toFixed(1)}s`);
+    console.log(`[render] ${renderFrameCount} frames in ${totalTimeSec.toFixed(1)}s (${avgFps.toFixed(1)} fps), concurrency=${concurrency}`);
 
     const outputStat = await stat(outputPath);
-    log(`Video: ${(outputStat.size / 1024 / 1024).toFixed(1)} MB`);
+    const fileSizeMb = outputStat.size / 1024 / 1024;
+    log(`Video: ${fileSizeMb.toFixed(1)} MB`);
+
+    // Collect final metrics for summary
+    const finalMetrics = await collectMetrics();
+    if (finalMetrics.memUsedMb > peakMemMb) peakMemMb = finalMetrics.memUsedMb;
+
+    const summary: RenderSummary = {
+      totalFrames: renderFrameCount,
+      totalTimeSec: Math.round(totalTimeSec),
+      avgFps: Math.round(avgFps * 10) / 10,
+      concurrency,
+      cpuCount: cpus,
+      peakCpuPercent,
+      peakMemMb,
+      memTotalMb: finalMetrics.memTotalMb,
+      resolution: `${renderWidth}x${renderHeight}`,
+      quality: isDraft ? "Draft" : "Full",
+      hints: [],
+    };
+    summary.hints = generateHints(summary);
+    onSummary?.(summary);
+
+    // Log hints to server console
+    for (const hint of summary.hints) {
+      console.log(`[render:hint] ${hint}`);
+    }
 
     return outputPath;
   } finally {

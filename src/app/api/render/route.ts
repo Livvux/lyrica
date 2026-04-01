@@ -42,6 +42,12 @@ export async function POST(request: Request) {
           onLog: (message) => {
             send({ phase: "log", message });
           },
+          onMetrics: (m) => {
+            send({ phase: "metrics", metrics: m });
+          },
+          onSummary: (s) => {
+            send({ phase: "summary", summary: s });
+          },
         });
 
         send({ phase: "done", filename: outputFilename });
