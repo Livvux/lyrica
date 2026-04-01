@@ -192,11 +192,11 @@ export async function renderVideo(
     log(`Composition: ${composition.width}x${composition.height}, ${composition.durationInFrames} Frames`);
 
     const cpus = os.cpus().length;
-    // enableMultiProcessOnLinux=false → thread model uses ~1GB/tab.
-    // Container limit 32GB → 8 workers × ~1GB + Node 8GB heap = ~16GB safe.
+    // Thread model at 720p uses ~250MB/tab, 1080p ~500MB/tab.
+    // Container: 32GB RAM, 10 CPU cores → concurrency limited by CPU, not RAM.
     const concurrency = isDraft
-      ? Math.min(4, cpus)
-      : Math.min(Math.max(2, cpus - 2), 8);
+      ? Math.min(cpus, 10)
+      : Math.min(Math.max(2, cpus - 1), 10);
 
     log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
     log(`Codec: H.264, Bitrate: ${isDraft ? "4M" : "8M"}, Preset: ${isDraft ? "ultrafast" : "veryfast"}`);
