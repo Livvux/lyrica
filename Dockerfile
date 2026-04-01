@@ -1,32 +1,13 @@
 FROM node:22-bookworm-slim
 
-# Chrome shared libs + ffmpeg + fontconfig + Liberation fonts
+# System-Chromium (bringt alle eigenen Abhängigkeiten mit) + ffmpeg + Fonts
+# System-Chromium ist in Debian vollständig gepatcht und funktioniert ohne Sandbox-Probleme
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
     ffmpeg \
     fontconfig \
     fonts-liberation \
     fonts-noto \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libx11-6 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    xdg-utils \
     && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
@@ -46,9 +27,8 @@ RUN pnpm build
 # Chrome Headless Shell vorab herunterladen → kein Download beim ersten Render
 RUN npx remotion browser ensure
 
-# Chrome-Wrapper mit --no-sandbox (erforderlich für Root-User in Docker)
-RUN CHROME=$(find /app/node_modules/.remotion -name 'chrome-headless-shell' -type f | head -1) && \
-    printf '#!/bin/sh\nexec "%s" --no-sandbox "$@"\n' "$CHROME" > /usr/local/bin/chrome-wrapper && \
+# Chrome-Wrapper → System-Chromium mit --no-sandbox
+RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox "$@"\n' > /usr/local/bin/chrome-wrapper && \
     chmod +x /usr/local/bin/chrome-wrapper
 
 # Tmp dir for audio/video files
