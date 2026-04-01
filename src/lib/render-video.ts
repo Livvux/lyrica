@@ -192,11 +192,11 @@ export async function renderVideo(
     log(`Composition: ${composition.width}x${composition.height}, ${composition.durationInFrames} Frames`);
 
     const cpus = os.cpus().length;
-    // enableMultiProcessOnLinux=false → thread model uses ~1GB/tab instead of ~2GB.
-    // Container limit 16GB → 6 workers × ~1GB + Node 8GB heap = ~14GB safe.
+    // enableMultiProcessOnLinux=false → thread model uses ~1GB/tab.
+    // Container limit 32GB → 8 workers × ~1GB + Node 8GB heap = ~16GB safe.
     const concurrency = isDraft
       ? Math.min(4, cpus)
-      : Math.min(Math.max(2, cpus - 2), 6);
+      : Math.min(Math.max(2, cpus - 2), 8);
 
     log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
     log(`Codec: H.264, Bitrate: ${isDraft ? "4M" : "8M"}, Preset: ${isDraft ? "ultrafast" : "veryfast"}`);
@@ -219,7 +219,7 @@ export async function renderVideo(
       jpegQuality: isDraft ? 60 : 80,
       imageFormat: "jpeg",
       chromiumOptions: {
-        gl: "swiftshader",
+        gl: "swangle",
         enableMultiProcessOnLinux: false,
       },
       onProgress: ({ progress }) => {
@@ -236,6 +236,7 @@ export async function renderVideo(
 
     const totalTime = ((Date.now() - renderStart) / 1000).toFixed(1);
     log(`Rendering abgeschlossen in ${totalTime}s`);
+    console.log(`[render] ${renderFrameCount} frames in ${totalTime}s (${(renderFrameCount / parseFloat(totalTime)).toFixed(1)} fps), concurrency=${concurrency}`);
 
     const outputStat = await stat(outputPath);
     log(`Video: ${(outputStat.size / 1024 / 1024).toFixed(1)} MB`);
