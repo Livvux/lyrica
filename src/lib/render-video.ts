@@ -114,7 +114,8 @@ export async function renderVideo(
 
   const renderConfig: VideoConfig = {
     ...config,
-    audioUrl: audioFilename,
+    // Absolute URL → Chrome kann die Datei sicher vom laufenden Next.js-Server laden
+    audioUrl: `http://localhost:3000/api/audio/${audioFilename}`,
     style: { ...config.style, bgImage: bgImageForRender },
     width: renderWidth,
     height: renderHeight,
@@ -124,18 +125,6 @@ export async function renderVideo(
 
   try {
     const bundleLocation = await getOrCreateBundle(onProgress);
-
-    // Dateien ins Bundle-Verzeichnis kopieren, damit Chromium sie während des Renderings laden kann.
-    // Die public/-Kopie reicht nicht: der Bundle-Cache wurde vor dem Upload erstellt.
-    await copyFile(
-      path.join(tmpDir, audioFilename),
-      path.join(bundleLocation, audioFilename)
-    );
-    if (config.style.bgImage.includes("/api/audio/")) {
-      const bgFilename = config.style.bgImage.split("/").pop()!;
-      const bgDest = path.join(publicDir, bgFilename); // bereits resized
-      await copyFile(bgDest, path.join(bundleLocation, bgFilename)).catch(() => {});
-    }
 
     const inputProps = renderConfig as unknown as Record<string, unknown>;
 
@@ -163,6 +152,8 @@ export async function renderVideo(
       concurrency,
       browserExecutable,
       hardwareAcceleration: "disable",
+      // 5 Minuten Timeout pro Frame — nötig für große Audiodateien (getAudioData)
+      timeoutInMilliseconds: 300_000,
       videoBitrate: isDraft ? "4M" : "8M",
       x264Preset: isDraft ? "ultrafast" : "faster",
       jpegQuality: isDraft ? 60 : 70,
