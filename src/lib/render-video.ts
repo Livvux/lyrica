@@ -125,6 +125,18 @@ export async function renderVideo(
   try {
     const bundleLocation = await getOrCreateBundle(onProgress);
 
+    // Dateien ins Bundle-Verzeichnis kopieren, damit Chromium sie während des Renderings laden kann.
+    // Die public/-Kopie reicht nicht: der Bundle-Cache wurde vor dem Upload erstellt.
+    await copyFile(
+      path.join(tmpDir, audioFilename),
+      path.join(bundleLocation, audioFilename)
+    );
+    if (config.style.bgImage.includes("/api/audio/")) {
+      const bgFilename = config.style.bgImage.split("/").pop()!;
+      const bgDest = path.join(publicDir, bgFilename); // bereits resized
+      await copyFile(bgDest, path.join(bundleLocation, bgFilename)).catch(() => {});
+    }
+
     const inputProps = renderConfig as unknown as Record<string, unknown>;
 
     // Auf Linux (Docker) Chrome-Wrapper mit --no-sandbox verwenden
