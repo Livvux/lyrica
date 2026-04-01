@@ -119,12 +119,8 @@ export async function renderVideo(
   const durationSec = config.durationInFrames / config.fps;
   const renderFrameCount = Math.ceil(durationSec * renderFps);
 
-  // Copy tmp assets into public/ so Remotion can serve them alongside other static assets
   const tmpFilesToClean: string[] = [];
-
   const audioFilename = config.audioUrl.split("/").pop()!;
-  await copyFile(path.join(tmpDir, audioFilename), path.join(publicDir, audioFilename));
-  tmpFilesToClean.push(path.join(publicDir, audioFilename));
 
   // Handle background image: resize to render dimensions if needed
   let bgImageForRender = config.style.bgImage;
@@ -139,8 +135,8 @@ export async function renderVideo(
 
   const renderConfig: VideoConfig = {
     ...config,
-    // Absolute URL → Chrome kann die Datei sicher vom laufenden Next.js-Server laden
-    audioUrl: `http://localhost:3000/api/audio/${audioFilename}`,
+    // Placeholder — replaced with bundle-relative URL after bundling
+    audioUrl: audioFilename,
     style: { ...config.style, bgImage: bgImageForRender },
     width: renderWidth,
     height: renderHeight,
@@ -150,6 +146,23 @@ export async function renderVideo(
 
   try {
     const bundleLocation = await getOrCreateBundle(onProgress);
+
+    // Copy audio + bg into bundle dir so Remotion serves them same-origin (no CORS)
+    const audioSrc = path.join(tmpDir, audioFilename);
+    const audioDest = path.join(bundleLocation, audioFilename);
+    await copyFile(audioSrc, audioDest);
+    tmpFilesToClean.push(audioDest);
+
+    if (bgImageForRender.startsWith("/")) {
+      const bgFilename = bgImageForRender.slice(1);
+      const bgSrc = path.join(publicDir, bgFilename);
+      const bgDest = path.join(bundleLocation, bgFilename);
+      await copyFile(bgSrc, bgDest);
+      tmpFilesToClean.push(bgDest);
+    }
+
+    // Use bundle-relative URLs (served by Remotion's dev server, same origin)
+    renderConfig.audioUrl = `/${audioFilename}`;
 
     const inputProps = renderConfig as unknown as Record<string, unknown>;
 
