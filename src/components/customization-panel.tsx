@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import { COLOR_PRESETS, STYLE_PRESETS } from "@/types/lyrics";
-import type { StyleConfig, EffectIntensity, AnimationVariant, VisualizerMode, PostEffect } from "@/types/lyrics";
+import { COLOR_PRESETS, STYLE_PRESETS, DEFAULT_WAVE_CONFIG } from "@/types/lyrics";
+import type { StyleConfig, EffectIntensity, AnimationVariant, VisualizerMode, PostEffect, WaveConfig } from "@/types/lyrics";
 
 interface CustomizationPanelProps {
   style: StyleConfig;
@@ -29,6 +29,7 @@ const VISUALIZER_OPTIONS: { value: VisualizerMode; label: string }[] = [
   { value: "none", label: "Aus" },
   { value: "rainbow", label: "Regenbogen" },
   { value: "mono", label: "Einfarbig" },
+  { value: "wave", label: "Trap Nation" },
 ];
 
 const POST_EFFECT_OPTIONS: { value: PostEffect; label: string }[] = [
@@ -211,6 +212,111 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
           />
         </div>
       )}
+
+      {/* Wave Config (Trap Nation) */}
+      {style.visualizerMode === "wave" && (() => {
+        const wc = style.waveConfig ?? DEFAULT_WAVE_CONFIG;
+        const RING_LABELS = ["Ring 1 (außen)", "Ring 2", "Ring 3", "Ring 4", "Ring 5 (innen)"];
+        function updateWave(partial: Partial<WaveConfig>) {
+          update({ waveConfig: { ...wc, ...partial } });
+        }
+        function updateColor(index: number, color: string) {
+          const colors = [...wc.colors] as WaveConfig["colors"];
+          colors[index] = color;
+          updateWave({ colors });
+        }
+        return (
+          <div className="flex flex-col gap-3 rounded-md bg-white/5 p-3">
+            <label className="text-xs font-medium text-white/50">Trap Nation Einstellungen</label>
+
+            {/* Ring Colors */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-white/40">Ring-Farben</label>
+              {wc.colors.map((color, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => updateColor(i, e.target.value)}
+                    className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent"
+                  />
+                  <span className="text-xs text-white/30">{RING_LABELS[i]}</span>
+                </div>
+              ))}
+              <button
+                onClick={() => updateWave({ colors: [...DEFAULT_WAVE_CONFIG.colors] as WaveConfig["colors"] })}
+                className="mt-1 self-start rounded bg-white/10 px-2 py-1 text-xs text-white/50 hover:bg-white/15 hover:text-white/70"
+              >
+                Standard-Farben
+              </button>
+            </div>
+
+            {/* Amplitude */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-white/40">
+                Amplitude: {wc.gain}
+              </label>
+              <input
+                type="range"
+                min={100}
+                max={500}
+                step={10}
+                value={wc.gain}
+                onChange={(e) => updateWave({ gain: Number(e.target.value) })}
+                className="w-full accent-white"
+              />
+            </div>
+
+            {/* Radius */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-white/40">
+                Kreis-Radius: {wc.radius}px
+              </label>
+              <input
+                type="range"
+                min={80}
+                max={250}
+                step={5}
+                value={wc.radius}
+                onChange={(e) => updateWave({ radius: Number(e.target.value) })}
+                className="w-full accent-white"
+              />
+            </div>
+
+            {/* Wave Points */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-white/40">
+                Glätte: {wc.points}
+              </label>
+              <input
+                type="range"
+                min={12}
+                max={64}
+                step={2}
+                value={wc.points}
+                onChange={(e) => updateWave({ points: Number(e.target.value) })}
+                className="w-full accent-white"
+              />
+            </div>
+
+            {/* Spread / Frequency Distribution */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-white/40">
+                Verteilung: {wc.spread.toFixed(2)} {wc.spread < 0.4 ? "(gleichmäßig)" : wc.spread > 0.8 ? "(konzentriert)" : ""}
+              </label>
+              <input
+                type="range"
+                min={0.2}
+                max={1.0}
+                step={0.05}
+                value={wc.spread}
+                onChange={(e) => updateWave({ spread: Number(e.target.value) })}
+                className="w-full accent-white"
+              />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Background */}
       <div className="flex flex-col gap-1.5">

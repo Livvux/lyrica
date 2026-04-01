@@ -211,7 +211,7 @@ export async function renderVideo(
       : Math.min(Math.max(2, cpus - 1), 10);
 
     log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
-    log(`Codec: H.264, Bitrate: ${isDraft ? "4M" : "8M"}, Preset: ${isDraft ? "ultrafast" : "veryfast"}`);
+    log(`Codec: H.264, Bitrate: ${isDraft ? "4M" : "8M"}, Preset: ${isDraft ? "ultrafast" : "veryfast"}, HW-Accel: if-possible`);
 
     const renderStart = Date.now();
     let lastLoggedPercent = 0;
@@ -230,14 +230,19 @@ export async function renderVideo(
       inputProps,
       concurrency,
       browserExecutable,
-      hardwareAcceleration: "disable",
+      hardwareAcceleration: "if-possible",
       timeoutInMilliseconds: 300_000,
       videoBitrate: isDraft ? "4M" : "8M",
       x264Preset: isDraft ? "ultrafast" : "veryfast",
-      jpegQuality: isDraft ? 60 : 80,
+      jpegQuality: isDraft ? 50 : 80,
       imageFormat: "jpeg",
+      // Draft: render every 2nd frame (duplicates in between) → ~2x faster
+      everyNthFrame: isDraft ? 2 : 1,
+      disallowParallelEncoding: false,
+      encodingBufferSize: isDraft ? "5M" : "10M",
+      encodingMaxRate: isDraft ? "6M" : "12M",
       chromiumOptions: {
-        gl: "swangle",
+        gl: "angle",
         enableMultiProcessOnLinux: true,
       },
       onProgress: ({ progress }) => {

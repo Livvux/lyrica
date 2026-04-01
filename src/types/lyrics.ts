@@ -23,13 +23,29 @@ export interface LyricLine {
 
 export type EffectIntensity = "off" | "subtle" | "strong";
 
-export type VisualizerMode = "none" | "rainbow" | "mono";
+export type VisualizerMode = "none" | "rainbow" | "mono" | "wave";
 
 export type AnimationVariant = "fade-drift" | "zoom" | "slide-horizontal" | "typewriter" | "handwritten" | "karaoke";
 
 export type BgType = "image" | "video";
 
 export type PostEffect = "none" | "glitch" | "vhs" | "film-grain" | "chromatic-aberration" | "camera-shake";
+
+export interface WaveConfig {
+  colors: [string, string, string, string, string]; // 5 Ringe, außen → innen
+  gain: number;       // Amplitude (default 280)
+  radius: number;     // Kreisradius (default 140)
+  points: number;     // Wellenpunkte / Glätte (default 32)
+  spread: number;     // Frequenzverteilung: 0.2=gleichmäßig, 1.0=konzentriert (default 0.55)
+}
+
+export const DEFAULT_WAVE_CONFIG: WaveConfig = {
+  colors: ["#3a5fcd", "#ff00ff", "#ff0000", "#ffb90f", "#ffffff"],
+  gain: 280,
+  radius: 140,
+  points: 32,
+  spread: 0.55,
+};
 
 export interface StyleConfig {
   fontSize: number;
@@ -44,6 +60,7 @@ export interface StyleConfig {
   logoScale: number;
   postEffect: PostEffect;
   showWatermark: boolean;
+  waveConfig: WaveConfig;
 }
 
 export const COLOR_PRESETS = ["#ffffff", "#fbbf24", "#22d3ee", "#f472b6"] as const;
@@ -61,6 +78,7 @@ export const DEFAULT_STYLE: StyleConfig = {
   logoScale: 100,
   postEffect: "none",
   showWatermark: true,
+  waveConfig: DEFAULT_WAVE_CONFIG,
 };
 
 export interface StylePreset {

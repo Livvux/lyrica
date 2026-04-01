@@ -12,8 +12,9 @@ const PARTICLE_COUNT = 80;
 const GRID_COLS = 10;
 const GRID_ROWS = 8;
 
-export const BeatParticles: React.FC<{ bassEnergy: number }> = ({
+export const BeatParticles: React.FC<{ bassEnergy: number; isDraft?: boolean }> = ({
   bassEnergy,
+  isDraft,
 }) => {
   const frame = useCurrentFrame();
   const { height, fps } = useVideoConfig();
@@ -21,9 +22,11 @@ export const BeatParticles: React.FC<{ bassEnergy: number }> = ({
 
   if (bassEnergy <= 0) return null;
 
+  const count = isDraft ? 30 : PARTICLE_COUNT;
+
   return (
     <AbsoluteFill style={{ pointerEvents: "none" }}>
-      {Array.from({ length: PARTICLE_COUNT }, (_, i) => {
+      {Array.from({ length: count }, (_, i) => {
         const r = (s: number) => seededRandom(i * 7 + s);
 
         // Distribute across grid cells with jitter for even coverage
@@ -77,7 +80,6 @@ export const BeatParticles: React.FC<{ bassEnergy: number }> = ({
               backgroundColor: "#fff",
               opacity,
               transform: `scale(${scale})`,
-              willChange: "transform, opacity",
             }}
           />
         );
