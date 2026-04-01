@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import { rateLimit } from "@/lib/rate-limit";
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function POST(request: Request) {
+  const limited = rateLimit("upload-bg", { windowMs: 60_000, max: 10 });
+  if (limited) return limited;
   try {
     const formData = await request.formData();
     const file = formData.get("image") as File | null;

@@ -4,7 +4,7 @@ import { copyFile, unlink, stat } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { bundle } from "@remotion/bundler";
-import { renderMedia, selectComposition } from "@remotion/renderer";
+import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
 import type { VideoConfig } from "@/types/lyrics";
 import { collectMetrics, generateHints, type RenderSummary, type SystemMetrics } from "./system-metrics";
 
@@ -117,6 +117,7 @@ export type RenderCallbacks = {
   onLog?: (message: string) => void;
   onMetrics?: (m: RenderMetrics) => void;
   onSummary?: (s: RenderSummary) => void;
+  signal?: AbortSignal;
 };
 
 export async function renderVideo(
@@ -124,7 +125,7 @@ export async function renderVideo(
   outputPath: string,
   callbacks?: RenderCallbacks
 ): Promise<string> {
-  const { onProgress, onLog, onMetrics, onSummary } = callbacks ?? {};
+  const { onProgress, onLog, onMetrics, onSummary, signal } = callbacks ?? {};
   const log = (msg: string) => onLog?.(msg);
   const publicDir = path.join(process.cwd(), "public");
   const tmpDir = path.join(process.cwd(), "tmp", "lyrica");
@@ -143,7 +144,8 @@ export async function renderVideo(
   log(`Lyrics: ${config.lines.length} Zeilen`);
 
   const tmpFilesToClean: string[] = [];
-  const audioFilename = config.audioUrl.split("/").pop()!;
+  const audioFilename = config.audioUrl.split("/").pop();
+  if (!audioFilename) throw new Error("Ungültige audioUrl: Dateiname konnte nicht extrahiert werden");
 
   // Handle background image: resize to render dimensions if needed
   let bgImageForRender = config.style.bgImage;
@@ -219,10 +221,21 @@ export async function renderVideo(
     let peakMemMb = 0;
     let lastMetricsTime = 0;
 
+    // Bridge AbortSignal to Remotion's cancel mechanism
+    const { cancelSignal, cancel } = makeCancelSignal();
+    if (signal) {
+      if (signal.aborted) {
+        cancel();
+      } else {
+        signal.addEventListener("abort", () => cancel(), { once: true });
+      }
+    }
+
     // Collect initial CPU sample (first call is always 0)
     await collectMetrics();
 
     await renderMedia({
+      cancelSignal,
       composition,
       serveUrl: bundleLocation,
       codec: "h264",

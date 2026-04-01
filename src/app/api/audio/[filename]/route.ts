@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFile, stat } from "fs/promises";
 import path from "path";
+import { sanitizeFilename } from "@/lib/sanitize-filename";
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
@@ -22,11 +23,8 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ filename: string }> }
 ) {
-  const { filename } = await params;
-
-  if (filename.includes("..") || filename.includes("/")) {
-    return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
-  }
+  const { filename: rawFilename } = await params;
+  const filename = sanitizeFilename(rawFilename);
 
   const filePath = path.join(TMP_DIR, filename);
   const ext = path.extname(filename).toLowerCase();

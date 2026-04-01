@@ -3,10 +3,14 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { cleanupTmpFiles } from "@/lib/cleanup-tmp";
+import { rateLimit } from "@/lib/rate-limit";
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function POST(request: Request) {
+  const limited = rateLimit("upload-audio", { windowMs: 60_000, max: 10 });
+  if (limited) return limited;
+
   // Clean up old tmp files (non-blocking)
   cleanupTmpFiles();
 

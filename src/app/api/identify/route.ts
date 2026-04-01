@@ -3,6 +3,7 @@ import { readFile, unlink, stat } from "fs/promises";
 import { join } from "path";
 import { execFile } from "child_process";
 import { randomUUID } from "crypto";
+import { sanitizeFilename } from "@/lib/sanitize-filename";
 
 const AUDD_API_URL = "https://api.audd.io/";
 const TMP_DIR = join(process.cwd(), "tmp", "lyrica");
@@ -25,8 +26,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "audioFilename required" }, { status: 400 });
   }
 
-  // Sanitize filename
-  const safe = audioFilename.replace(/[^a-zA-Z0-9._-]/g, "");
+  const safe = sanitizeFilename(audioFilename);
   const audioPath = join(TMP_DIR, safe);
   try {
     await stat(audioPath);

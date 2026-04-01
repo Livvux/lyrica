@@ -11,6 +11,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { groupWordsIntoLines, getDurationInFrames } from "@/lib/timing";
 import { validateLines } from "@/lib/lyrics-validation";
 import { useHistory } from "@/lib/use-history";
+import { savePersistence, loadPersistence } from "@/lib/use-persistence";
 import { DEFAULT_STYLE } from "@/types/lyrics";
 import type { LyricLine, VideoConfig, StyleConfig, ValidationResult, SongMatch, ReferenceLyrics } from "@/types/lyrics";
 
@@ -29,6 +30,26 @@ export default function Home() {
   const [validationPhase, setValidationPhase] = useState<ValidationPhase>("idle");
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [pendingLines, setPendingLines] = useState<LyricLine[]>([]);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Restore from localStorage on mount
+  useEffect(() => {
+    const saved = loadPersistence();
+    if (saved) {
+      if (saved.audioUrl) setAudioUrl(saved.audioUrl);
+      if (saved.durationSec) setDurationSec(saved.durationSec);
+      if (saved.style) setStyle(saved.style);
+      if (saved.lyricsActive) setLyricsActive(saved.lyricsActive);
+      if (saved.lines?.length) setLines(saved.lines);
+    }
+    setHydrated(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save to localStorage on every change
+  useEffect(() => {
+    if (!hydrated) return;
+    savePersistence({ lines, audioUrl, durationSec, style, lyricsActive });
+  }, [lines, audioUrl, durationSec, style, lyricsActive, hydrated]);
 
   // Undo/Redo keyboard shortcuts
   useEffect(() => {
@@ -48,13 +69,19 @@ export default function Home() {
 
   const handleAudioUploaded = useCallback(
     (url: string, duration: number) => {
+      if (lines.length > 0) {
+        const confirmed = window.confirm(
+          "Du hast bereits Lyrics bearbeitet. Beim Hochladen eines neuen Songs werden die Lyrics zurückgesetzt. Fortfahren?"
+        );
+        if (!confirmed) return;
+      }
       setAudioUrl(url);
       setDurationSec(duration);
       setLines([]);
       setLyricsActive(false);
       setTranscribeError(null);
     },
-    [setLines]
+    [setLines, lines]
   );
 
   async function handleActivateLyrics() {
@@ -62,7 +89,11 @@ export default function Home() {
     setIsTranscribing(true);
     setTranscribeError(null);
     try {
-      const audioFilename = audioUrl.split("/").pop()!;
+      const audioFilename = audioUrl.split("/").pop();
+      if (!audioFilename) {
+        setTranscribeError("Ungültige Audio-URL.");
+        return;
+      }
       const formData = new FormData();
       formData.append("audioFilename", audioFilename);
       const res = await fetch("/api/transcribe", {
@@ -76,7 +107,11 @@ export default function Home() {
       }
       const grouped = groupWordsIntoLines(data.result.words);
       setPendingLines(grouped);
-      runValidation(audioFilename, grouped);
+      try {
+        await runValidation(audioFilename, grouped);
+      } catch {
+        // Validation ist optional — Fehler werden graceful behandelt
+      }
     } catch {
       setTranscribeError("Fehler bei der Transkription.");
     } finally {

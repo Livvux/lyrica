@@ -23,6 +23,28 @@ export function LyricsEditor({ lines, onChange, onUndo, onRedo, canUndo, canRedo
     onChange(lines.filter((_, i) => i !== index));
   }
 
+  function addLine(afterIndex: number) {
+    const FPS = 30;
+    const prev = lines[afterIndex];
+    const next = lines[afterIndex + 1];
+    const startSec = prev ? prev.endSec : 0;
+    const endSec = next ? next.startSec : startSec + 3;
+    const newLine: LyricLine = {
+      text: "",
+      startSec,
+      endSec,
+      startFrame: Math.round(startSec * FPS),
+      endFrame: Math.round(endSec * FPS),
+      words: [],
+    };
+    const updated = [
+      ...lines.slice(0, afterIndex + 1),
+      newLine,
+      ...lines.slice(afterIndex + 1),
+    ];
+    onChange(updated);
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between mb-1">
@@ -75,9 +97,22 @@ export function LyricsEditor({ lines, onChange, onUndo, onRedo, canUndo, canRedo
             >
               ×
             </button>
+            <button
+              onClick={() => addLine(i)}
+              className="text-white/20 hover:text-green-400 transition text-sm"
+              title="Zeile danach einfügen"
+            >
+              +
+            </button>
           </div>
         ))}
       </div>
+      <button
+        onClick={() => addLine(lines.length - 1)}
+        className="self-start rounded px-2 py-1 text-xs text-white/30 hover:text-white/60 transition"
+      >
+        + Zeile hinzufügen
+      </button>
       {lines.length === 0 && (
         <p className="text-sm text-white/30 text-center py-4">
           Noch keine Lyrics vorhanden

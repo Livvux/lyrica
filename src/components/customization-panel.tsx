@@ -171,6 +171,13 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
                   }}
                 />
               ))}
+              <input
+                type="color"
+                value={style.textColor}
+                onChange={(e) => update({ textColor: e.target.value })}
+                className="h-8 w-8 cursor-pointer rounded-full border-2 border-white/15 bg-transparent"
+                title="Eigene Farbe"
+              />
             </div>
           </div>
         </>

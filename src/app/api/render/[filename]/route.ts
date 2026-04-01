@@ -3,6 +3,7 @@ import { stat, unlink } from "fs/promises";
 import { createReadStream } from "fs";
 import path from "path";
 import { Readable } from "stream";
+import { sanitizeFilename } from "@/lib/sanitize-filename";
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
@@ -10,9 +11,10 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ filename: string }> }
 ) {
-  const { filename } = await params;
+  const { filename: rawFilename } = await params;
+  const filename = sanitizeFilename(rawFilename);
 
-  if (!filename.endsWith(".mp4") || filename.includes("..")) {
+  if (!filename.endsWith(".mp4")) {
     return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
   }
 

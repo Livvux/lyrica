@@ -74,6 +74,7 @@ export function ExportButton({ config }: ExportButtonProps) {
   const [metrics, setMetrics] = useState<RenderMetrics | null>(null);
   const [summary, setSummary] = useState<RenderSummary | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -97,11 +98,15 @@ export function ExportButton({ config }: ExportButtonProps) {
       renderQuality: quality,
     };
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const response = await fetch("/api/render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(exportConfig),
+        signal: controller.signal,
       });
 
       if (!response.ok || !response.body) {
@@ -164,9 +169,15 @@ export function ExportButton({ config }: ExportButtonProps) {
       a.download = `lyrica-${quality === "draft" ? "draft-720p" : "1080p"}.mp4`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        addLog("Export abgebrochen.");
+        setState({ status: "idle" });
+        return;
+      }
       setState({ status: "error", message: "Fehler beim Exportieren." });
     } finally {
+      abortControllerRef.current = null;
       setState((prev) => (prev.status === "error" ? prev : { status: "idle" }));
     }
   }
@@ -200,7 +211,15 @@ export function ExportButton({ config }: ExportButtonProps) {
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-sm text-white/80">
               <span className="font-medium">{label}</span>
-              <span className="tabular-nums font-semibold">{percent}%</span>
+              <div className="flex items-center gap-3">
+                <span className="tabular-nums font-semibold">{percent}%</span>
+                <button
+                  onClick={() => abortControllerRef.current?.abort()}
+                  className="rounded-md border border-white/20 px-2.5 py-0.5 text-xs text-white/60 transition hover:border-red-400/50 hover:text-red-400"
+                >
+                  Abbrechen
+                </button>
+              </div>
             </div>
             <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
               <div
