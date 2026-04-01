@@ -32,7 +32,7 @@ RUN npx remotion browser ensure
 # --no-sandbox:          Root-User in Docker
 # --disable-dev-shm-usage: /tmp statt /dev/shm für IPC
 # --disable-gpu:         kein GPU erforderlich
-RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --no-zygote --disable-dev-shm-usage --disable-gpu --disable-setuid-sandbox "$@"\n' > /usr/local/bin/chrome-wrapper && \
+RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --disable-dev-shm-usage --disable-setuid-sandbox "$@"\n' > /usr/local/bin/chrome-wrapper && \
     chmod +x /usr/local/bin/chrome-wrapper
 
 # Tmp dir for audio/video files

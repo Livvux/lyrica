@@ -220,7 +220,7 @@ export async function renderVideo(
       imageFormat: "jpeg",
       chromiumOptions: {
         gl: "swangle",
-        enableMultiProcessOnLinux: false,
+        enableMultiProcessOnLinux: true,
       },
       onProgress: ({ progress }) => {
         onProgress?.({ phase: "rendering", progress });
