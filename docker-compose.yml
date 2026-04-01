@@ -15,9 +15,11 @@ services:
       NODE_OPTIONS: "--max-old-space-size=8192"
       # Chrome mit --no-sandbox (Root-User in Docker)
       CHROME_EXECUTABLE: "/usr/local/bin/chrome-wrapper"
-    # Chromium-Sandbox in Docker benötigt SYS_ADMIN
+    # seccomp deaktivieren + SYS_ADMIN: Chrome braucht beides für Namespacing
     cap_add:
       - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
     # Chrome nutzt /dev/shm intensiv
     shm_size: 2gb
     # Ressourcen: 10 von 12 CPUs, 16 GB RAM-Limit
