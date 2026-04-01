@@ -43,6 +43,9 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
+# Chrome Headless Shell vorab herunterladen → kein Download beim ersten Render
+RUN npx remotion browser ensure
+
 # Tmp dir for audio/video files
 RUN mkdir -p tmp/lyrica
 
