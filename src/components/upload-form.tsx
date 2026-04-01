@@ -30,25 +30,19 @@ export function UploadForm({ onAudioUploaded }: UploadFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function uploadFile(file: File) {
     setError(null);
     setIsLoading(true);
-
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-    const file = formData.get("audio") as File | null;
-
-    if (!file || file.size === 0) {
-      setError("Bitte eine Audiodatei auswählen.");
-      setIsLoading(false);
-      return;
-    }
+    setFileName(file.name);
 
     try {
       const durationSec = await getAudioDuration(file);
+
+      const formData = new FormData();
+      formData.append("audio", file);
 
       const response = await fetch("/api/upload-audio", {
         method: "POST",
@@ -59,7 +53,6 @@ export function UploadForm({ onAudioUploaded }: UploadFormProps) {
 
       if (!response.ok || data.error) {
         setError(data.error ?? "Fehler beim Hochladen.");
-        setIsLoading(false);
         return;
       }
 
@@ -73,16 +66,47 @@ export function UploadForm({ onAudioUploaded }: UploadFormProps) {
     }
   }
 
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const file = formData.get("audio") as File | null;
+
+    if (!file || file.size === 0) {
+      setError("Bitte eine Audiodatei auswählen.");
+      return;
+    }
+
+    await uploadFile(file);
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    setFileName(file?.name ?? null);
-    setError(null);
+    if (file) {
+      void uploadFile(file);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      void uploadFile(file);
+    }
   }
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
       <div
-        className="relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-white/20 bg-white/5 px-6 py-12 transition hover:border-white/40 hover:bg-white/10 cursor-pointer"
+        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={handleDrop}
+        className={`relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-12 transition cursor-pointer ${
+          isDragOver
+            ? "border-white/60 bg-white/15"
+            : "border-white/20 bg-white/5 hover:border-white/40 hover:bg-white/10"
+        }`}
       >
         <svg
           className="h-10 w-10 text-white/50"
