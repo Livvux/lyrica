@@ -192,11 +192,11 @@ export async function renderVideo(
     log(`Composition: ${composition.width}x${composition.height}, ${composition.durationInFrames} Frames`);
 
     const cpus = os.cpus().length;
-    // Each Chrome tab uses ~2GB RSS with SwiftShader GL.
-    // Container limit is 16GB → max 4 workers to stay safe.
+    // enableMultiProcessOnLinux=false → thread model uses ~1GB/tab instead of ~2GB.
+    // Container limit 16GB → 6 workers × ~1GB + Node 8GB heap = ~14GB safe.
     const concurrency = isDraft
-      ? Math.min(2, cpus)
-      : Math.min(Math.max(2, cpus - 2), 4);
+      ? Math.min(4, cpus)
+      : Math.min(Math.max(2, cpus - 2), 6);
 
     log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
     log(`Codec: H.264, Bitrate: ${isDraft ? "4M" : "8M"}, Preset: ${isDraft ? "ultrafast" : "veryfast"}`);
@@ -220,7 +220,7 @@ export async function renderVideo(
       imageFormat: "jpeg",
       chromiumOptions: {
         gl: "swiftshader",
-        enableMultiProcessOnLinux: true,
+        enableMultiProcessOnLinux: false,
       },
       onProgress: ({ progress }) => {
         onProgress?.({ phase: "rendering", progress });
