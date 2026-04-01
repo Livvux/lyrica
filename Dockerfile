@@ -46,6 +46,11 @@ RUN pnpm build
 # Chrome Headless Shell vorab herunterladen → kein Download beim ersten Render
 RUN npx remotion browser ensure
 
+# Chrome-Wrapper mit --no-sandbox (erforderlich für Root-User in Docker)
+RUN CHROME=$(find /app/node_modules/.remotion -name 'chrome-headless-shell' -type f | head -1) && \
+    printf '#!/bin/sh\nexec "%s" --no-sandbox "$@"\n' "$CHROME" > /usr/local/bin/chrome-wrapper && \
+    chmod +x /usr/local/bin/chrome-wrapper
+
 # Tmp dir for audio/video files
 RUN mkdir -p tmp/lyrica
 

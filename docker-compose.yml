@@ -13,6 +13,8 @@ services:
     environment:
       # Node.js Heap: verhindert GC-Druck bei langen Renders
       NODE_OPTIONS: "--max-old-space-size=8192"
+      # Chrome mit --no-sandbox (Root-User in Docker)
+      CHROME_EXECUTABLE: "/usr/local/bin/chrome-wrapper"
     # Chromium-Sandbox in Docker benötigt SYS_ADMIN
     cap_add:
       - SYS_ADMIN

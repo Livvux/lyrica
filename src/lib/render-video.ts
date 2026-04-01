@@ -127,10 +127,14 @@ export async function renderVideo(
 
     const inputProps = renderConfig as unknown as Record<string, unknown>;
 
+    // Auf Linux (Docker) Chrome-Wrapper mit --no-sandbox verwenden
+    const browserExecutable = process.env.CHROME_EXECUTABLE ?? null;
+
     const composition = await selectComposition({
       serveUrl: bundleLocation,
       id: "LyricsVideo",
       inputProps,
+      browserExecutable,
     });
 
     const cpus = os.cpus().length;
@@ -145,6 +149,7 @@ export async function renderVideo(
       outputLocation: outputPath,
       inputProps,
       concurrency,
+      browserExecutable,
       hardwareAcceleration: "disable",
       videoBitrate: isDraft ? "4M" : "8M",
       x264Preset: isDraft ? "ultrafast" : "faster",
