@@ -112,37 +112,42 @@ export function ExportButton({ config }: ExportButtonProps) {
   }
 
   const isActive = state.status !== "idle" && state.status !== "error";
+  // Bundling is usually instant (cached), so give it 5%. Rendering is the real work (90%). Download 5%.
   const progress =
     state.status === "bundling"
-      ? state.progress * 0.3
+      ? state.progress * 0.05
       : state.status === "rendering"
-        ? 0.3 + state.progress * 0.7
+        ? 0.05 + state.progress * 0.90
         : state.status === "downloading"
-          ? 1
+          ? 0.95
           : 0;
+
+  const percent = Math.round(progress * 100);
 
   const label =
     state.status === "bundling"
-      ? "Vorbereiten..."
+      ? "Vorbereiten…"
       : state.status === "rendering"
-        ? `Rendere ${Math.round(progress * 100)}%`
+        ? `Rendere… ${percent}%`
         : state.status === "downloading"
-          ? "Download..."
+          ? "Download…"
           : null;
 
   return (
     <div className="flex flex-col gap-2">
       {isActive ? (
-        <button
-          disabled
-          className="relative overflow-hidden rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <div
-            className="absolute inset-0 bg-white/30 transition-all duration-300 ease-linear"
-            style={{ width: `${progress * 100}%` }}
-          />
-          <span className="relative">{label}</span>
-        </button>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-sm text-white/80">
+            <span className="font-medium">{label}</span>
+            <span className="tabular-nums font-semibold">{percent}%</span>
+          </div>
+          <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-white transition-all duration-500 ease-out"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
       ) : (
         <div className="flex gap-3">
           <button
