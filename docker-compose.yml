@@ -1,0 +1,20 @@
+services:
+  lyrica:
+    build: .
+    image: lyrica:latest
+    container_name: lyrica
+    restart: unless-stopped
+    # Nur auf Tailscale-IP lauschen → kein öffentlicher Zugriff
+    ports:
+      - "100.99.236.56:3000:3000"
+    volumes:
+      - lyrica-tmp:/app/tmp/lyrica
+    env_file: .env.production
+    # Chromium-Sandbox in Docker benötigt SYS_ADMIN
+    cap_add:
+      - SYS_ADMIN
+    # Chrome nutzt /dev/shm intensiv
+    shm_size: 2gb
+
+volumes:
+  lyrica-tmp:
