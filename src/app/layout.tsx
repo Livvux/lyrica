@@ -18,6 +18,9 @@ export default function RootLayout({
     <html lang="de">
       <body className={`${inter.className} bg-black text-white antialiased`}>
         {children}
+        <footer className="fixed bottom-0 inset-x-0 text-center text-[10px] text-white/20 py-1 pointer-events-none select-none">
+          build {process.env.NEXT_PUBLIC_BUILD_TIME}
+        </footer>
       </body>
     </html>
   );
