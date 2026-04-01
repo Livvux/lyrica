@@ -27,9 +27,12 @@ RUN pnpm build
 # Chrome Headless Shell vorab herunterladen → kein Download beim ersten Render
 RUN npx remotion browser ensure
 
-# Chrome-Wrapper → System-Chromium mit --no-sandbox + --disable-dev-shm-usage
-# (--disable-dev-shm-usage verhindert shared memory Fehler in Docker)
-RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --disable-dev-shm-usage "$@"\n' > /usr/local/bin/chrome-wrapper && \
+# Chrome-Wrapper: vollständige Docker-kompatible Flags
+# --no-zygote:           deaktiviert Zygote-Prozess (verhindert FD-Passing-Crash)
+# --no-sandbox:          Root-User in Docker
+# --disable-dev-shm-usage: /tmp statt /dev/shm für IPC
+# --disable-gpu:         kein GPU erforderlich
+RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --no-zygote --disable-dev-shm-usage --disable-gpu --disable-setuid-sandbox "$@"\n' > /usr/local/bin/chrome-wrapper && \
     chmod +x /usr/local/bin/chrome-wrapper
 
 # Tmp dir for audio/video files
