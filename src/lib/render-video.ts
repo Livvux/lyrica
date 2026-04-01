@@ -133,19 +133,27 @@ export async function renderVideo(
       inputProps,
     });
 
+    const cpus = os.cpus().length;
+    const concurrency = isDraft
+      ? Math.min(2, cpus)
+      : Math.min(Math.max(1, cpus - 1), 4);
+
     await renderMedia({
       composition,
       serveUrl: bundleLocation,
       codec: "h264",
       outputLocation: outputPath,
       inputProps,
-      concurrency: Math.min(os.cpus().length, 8),
-      hardwareAcceleration: "if-possible",
+      concurrency,
+      hardwareAcceleration: "disable",
       videoBitrate: isDraft ? "4M" : "8M",
       x264Preset: isDraft ? "ultrafast" : "faster",
       jpegQuality: isDraft ? 60 : 70,
       imageFormat: "jpeg",
-      chromiumOptions: { gl: "angle" },
+      chromiumOptions: {
+        gl: "swiftshader",
+        enableMultiProcessOnLinux: false,
+      },
       onProgress: ({ progress }) =>
         onProgress?.({ phase: "rendering", progress }),
     });

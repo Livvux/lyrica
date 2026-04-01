@@ -3,11 +3,15 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { renderVideo } from "@/lib/render-video";
 import { cleanupTmpFiles } from "@/lib/cleanup-tmp";
+import { rateLimit } from "@/lib/rate-limit";
 import type { VideoConfig } from "@/types/lyrics";
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function POST(request: Request) {
+  const limited = rateLimit("render", { windowMs: 60_000, max: 3 });
+  if (limited) return limited;
+
   // Clean up old tmp files (non-blocking)
   cleanupTmpFiles();
 

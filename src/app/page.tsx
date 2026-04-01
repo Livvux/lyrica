@@ -1,21 +1,25 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { UploadForm } from "@/components/upload-form";
 import { PreviewPlayer } from "@/components/preview-player";
 import { LyricsEditor } from "@/components/lyrics-editor";
 import { ExportButton } from "@/components/export-button";
 import { CustomizationPanel } from "@/components/customization-panel";
 import { LyricsValidationPanel } from "@/components/lyrics-validation-panel";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { groupWordsIntoLines, getDurationInFrames } from "@/lib/timing";
 import { validateLines } from "@/lib/lyrics-validation";
+import { useHistory } from "@/lib/use-history";
 import { DEFAULT_STYLE } from "@/types/lyrics";
 import type { LyricLine, VideoConfig, StyleConfig, ValidationResult, SongMatch, ReferenceLyrics } from "@/types/lyrics";
 
 type ValidationPhase = "idle" | "identifying" | "fetching" | "validating" | "done";
 
 export default function Home() {
-  const [lines, setLines] = useState<LyricLine[]>([]);
+  const linesHistory = useHistory<LyricLine[]>([]);
+  const lines = linesHistory.value;
+  const setLines = linesHistory.set;
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [durationSec, setDurationSec] = useState(0);
   const [style, setStyle] = useState<StyleConfig>(DEFAULT_STYLE);
@@ -26,6 +30,22 @@ export default function Home() {
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [pendingLines, setPendingLines] = useState<LyricLine[]>([]);
 
+  // Undo/Redo keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          linesHistory.redo();
+        } else {
+          linesHistory.undo();
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [linesHistory]);
+
   const handleAudioUploaded = useCallback(
     (url: string, duration: number) => {
       setAudioUrl(url);
@@ -34,7 +54,7 @@ export default function Home() {
       setLyricsActive(false);
       setTranscribeError(null);
     },
-    []
+    [setLines]
   );
 
   async function handleActivateLyrics() {
@@ -156,7 +176,9 @@ export default function Home() {
 
       {config && (
         <>
-          <PreviewPlayer config={config} />
+          <ErrorBoundary>
+            <PreviewPlayer config={config} />
+          </ErrorBoundary>
           <CustomizationPanel
             style={style}
             onChange={setStyle}
@@ -199,7 +221,14 @@ export default function Home() {
                   Lyrics deaktivieren
                 </button>
               </div>
-              <LyricsEditor lines={lines} onChange={setLines} />
+              <LyricsEditor
+                lines={lines}
+                onChange={setLines}
+                onUndo={linesHistory.undo}
+                onRedo={linesHistory.redo}
+                canUndo={linesHistory.canUndo}
+                canRedo={linesHistory.canRedo}
+              />
             </div>
           )}
 

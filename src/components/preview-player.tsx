@@ -8,6 +8,11 @@ const Player = dynamic(
   { ssr: false }
 );
 
+const LyricsVideoLazy = dynamic(
+  () => import("@/remotion/lyrics-video").then((mod) => mod.LyricsVideo),
+  { ssr: false }
+) as never;
+
 interface PreviewPlayerProps {
   config: VideoConfig;
 }
@@ -17,15 +22,7 @@ export function PreviewPlayer({ config }: PreviewPlayerProps) {
     <div className="w-full overflow-hidden rounded-2xl border border-white/10">
       <div className="relative w-full" style={{ aspectRatio: "16/9" }}>
         <Player
-          component={
-            // Lazy import to avoid SSR issues
-            dynamic(() =>
-              import("@/remotion/lyrics-video").then(
-                (mod) => mod.LyricsVideo
-              ),
-              { ssr: false }
-            ) as never
-          }
+          component={LyricsVideoLazy}
           inputProps={config}
           durationInFrames={config.durationInFrames}
           fps={config.fps}

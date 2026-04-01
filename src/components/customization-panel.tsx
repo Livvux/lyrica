@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import { COLOR_PRESETS } from "@/types/lyrics";
-import type { StyleConfig, EffectIntensity, AnimationVariant, VisualizerMode } from "@/types/lyrics";
+import { COLOR_PRESETS, STYLE_PRESETS } from "@/types/lyrics";
+import type { StyleConfig, EffectIntensity, AnimationVariant, VisualizerMode, PostEffect } from "@/types/lyrics";
 
 interface CustomizationPanelProps {
   style: StyleConfig;
@@ -16,6 +16,7 @@ const ANIMATION_OPTIONS: { value: AnimationVariant; label: string }[] = [
   { value: "slide-horizontal", label: "Slide" },
   { value: "typewriter", label: "Tippen" },
   { value: "handwritten", label: "Handschrift" },
+  { value: "karaoke", label: "Karaoke" },
 ];
 
 const INTENSITY_OPTIONS: { value: EffectIntensity; label: string }[] = [
@@ -30,11 +31,30 @@ const VISUALIZER_OPTIONS: { value: VisualizerMode; label: string }[] = [
   { value: "mono", label: "Einfarbig" },
 ];
 
+const POST_EFFECT_OPTIONS: { value: PostEffect; label: string }[] = [
+  { value: "none", label: "Aus" },
+  { value: "glitch", label: "Glitch" },
+  { value: "vhs", label: "VHS" },
+  { value: "film-grain", label: "Film-Korn" },
+  { value: "chromatic-aberration", label: "Chrom. Aberr." },
+  { value: "camera-shake", label: "Kamera-Shake" },
+];
+
 export function CustomizationPanel({ style, onChange, lyricsActive }: CustomizationPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fonts, setFonts] = useState<string[]>([]);
-  const [fontsLoading, setFontsLoading] = useState(false);
+  const [fontsLoading, setFontsLoading] = useState(true);
   const [bgError, setBgError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/fonts", { cache: "no-cache" })
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled) setFonts(data); })
+      .catch(() => { if (!cancelled) setFonts(["Inter", "Arial", "Helvetica"]); })
+      .finally(() => { if (!cancelled) setFontsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   function loadFonts() {
     setFontsLoading(true);
@@ -45,8 +65,6 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
       .finally(() => setFontsLoading(false));
   }
 
-  useEffect(() => { loadFonts(); }, []);
-
   function update(partial: Partial<StyleConfig>) {
     onChange({ ...style, ...partial });
   }
@@ -54,6 +72,25 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
   return (
     <div className="flex flex-col gap-4 rounded-lg bg-white/5 p-4">
       <h3 className="text-sm font-medium text-white/60">Anpassungen</h3>
+
+      {/* Style Presets */}
+      {lyricsActive && (
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-white/40">Preset</label>
+          <div className="flex flex-wrap gap-1.5">
+            {STYLE_PRESETS.map((preset) => (
+              <button
+                key={preset.name}
+                onClick={() => update(preset.style)}
+                title={preset.description}
+                className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-white/70 transition hover:bg-white/20 hover:text-white"
+              >
+                {preset.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {lyricsActive && (
         <>
@@ -180,7 +217,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
         <label className="text-xs text-white/40">Hintergrund</label>
         <div className="flex gap-2">
           <button
-            onClick={() => update({ bgImage: "/bg-default.jpg" })}
+            onClick={() => update({ bgImage: "/bg-default.jpg", bgType: "image" })}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-white/70 transition hover:bg-white/15"
           >
             Standard
@@ -189,17 +226,18 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
             onClick={() => fileInputRef.current?.click()}
             className="rounded-md bg-white/10 px-3 py-1.5 text-xs text-white/70 transition hover:bg-white/15"
           >
-            Eigenes Bild
+            Eigenes Bild/Video
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4,video/webm"
             className="hidden"
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
               setBgError(null);
+              const isVideo = file.type.startsWith("video/");
               try {
                 const formData = new FormData();
                 formData.append("image", file);
@@ -211,14 +249,20 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
                 }
                 const data = await res.json();
                 if (data.filename) {
-                  update({ bgImage: `/api/audio/${data.filename}` });
+                  update({
+                    bgImage: `/api/audio/${data.filename}`,
+                    bgType: isVideo ? "video" : "image",
+                  });
                 }
               } catch {
-                setBgError("Bild-Upload fehlgeschlagen.");
+                setBgError("Upload fehlgeschlagen.");
               }
             }}
           />
         </div>
+        {style.bgType === "video" && (
+          <p className="text-xs text-white/30">Video-Hintergrund aktiv (Loop)</p>
+        )}
         {bgError && <p className="text-xs text-red-400">{bgError}</p>}
       </div>
 
@@ -254,6 +298,43 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
           <span
             className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
               style.beatReactive ? "translate-x-4" : "translate-x-0"
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* Post Effect */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs text-white/40">Post-Effekt</label>
+        <div className="flex flex-wrap rounded-md bg-white/10 p-0.5">
+          {POST_EFFECT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => update({ postEffect: opt.value })}
+              className={`rounded px-2.5 py-1.5 text-xs transition ${
+                style.postEffect === opt.value
+                  ? "bg-white/20 text-white"
+                  : "text-white/50 hover:text-white/70"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Watermark Toggle */}
+      <div className="flex items-center justify-between">
+        <label className="text-xs text-white/40">Wasserzeichen</label>
+        <button
+          onClick={() => update({ showWatermark: !style.showWatermark })}
+          className={`relative h-6 w-10 shrink-0 rounded-full transition ${
+            style.showWatermark ? "bg-white/30" : "bg-white/10"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              style.showWatermark ? "translate-x-4" : "translate-x-0"
             }`}
           />
         </button>

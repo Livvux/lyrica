@@ -207,6 +207,7 @@ export function groupWordsIntoLines(words: TranscriptionWord[]): LyricLine[] {
       endSec: last.endSec,
       startFrame: Math.max(0, secToFrame(first.startSec) - FADE_FRAMES),
       endFrame: secToFrame(last.endSec) + FADE_FRAMES,
+      words: currentWords.map((w) => ({ ...w })),
     });
 
     currentWords = [];

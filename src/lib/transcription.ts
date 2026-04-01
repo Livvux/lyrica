@@ -315,7 +315,7 @@ async function transcribeAndMerge(
 
     // Skip entire chunk if it's a hallucination (silent/instrumental section)
     if (isHallucinatedResult(result)) {
-      console.log(`Skipping hallucinated chunk at offset ${segment.offsetSec}s: "${result.text.slice(0, 50)}"`);
+      // Skip hallucinated chunk (silent/instrumental section)
       continue;
     }
 

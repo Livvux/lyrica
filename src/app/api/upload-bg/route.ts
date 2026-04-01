@@ -14,24 +14,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Kein Bild" }, { status: 400 });
     }
 
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > 50 * 1024 * 1024) {
       return NextResponse.json(
-        { error: "Bild zu groß. Maximal 10 MB erlaubt." },
+        { error: "Datei zu groß. Maximal 50 MB für Videos erlaubt." },
         { status: 400 }
       );
     }
 
-    if (!file.type.startsWith("image/")) {
+    const isImage = file.type.startsWith("image/");
+    const isVideo = file.type.startsWith("video/");
+    if (!isImage && !isVideo) {
       return NextResponse.json(
-        { error: "Nur Bilddateien erlaubt." },
+        { error: "Nur Bild- oder Videodateien erlaubt." },
         { status: 400 }
       );
     }
 
     await mkdir(TMP_DIR, { recursive: true });
-    const ALLOWED_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"]);
-    const rawExt = path.extname(file.name).toLowerCase() || ".jpg";
-    const ext = ALLOWED_EXTS.has(rawExt) ? rawExt : ".jpg";
+    const ALLOWED_EXTS = new Set([
+      ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif",
+      ".mp4", ".webm",
+    ]);
+    const rawExt = path.extname(file.name).toLowerCase() || (isVideo ? ".mp4" : ".jpg");
+    const ext = ALLOWED_EXTS.has(rawExt) ? rawExt : (isVideo ? ".mp4" : ".jpg");
     const filename = `${randomUUID()}${ext}`;
     const filePath = path.join(TMP_DIR, filename);
 

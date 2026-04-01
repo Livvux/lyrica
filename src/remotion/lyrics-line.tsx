@@ -1,5 +1,5 @@
 import { useCurrentFrame, interpolate } from "remotion";
-import type { LyricLine, StyleConfig } from "@/types/lyrics";
+import type { LyricLine, StyleConfig, TranscriptionWord } from "@/types/lyrics";
 
 interface BeatValues {
   scale: number;
@@ -110,6 +110,55 @@ function TypewriterText({
   );
 }
 
+function KaraokeText({
+  words,
+  frame,
+  activeColor,
+  inactiveColor,
+}: {
+  words: TranscriptionWord[];
+  frame: number;
+  activeColor: string;
+  inactiveColor: string;
+}) {
+  const FPS = 30;
+  return (
+    <>
+      {words.map((word, i) => {
+        const wordStartFrame = Math.round(word.startSec * FPS);
+        const wordEndFrame = Math.round(word.endSec * FPS);
+        const isActive = frame >= wordStartFrame && frame <= wordEndFrame;
+        const isPast = frame > wordEndFrame;
+
+        const progress = interpolate(
+          frame,
+          [wordStartFrame, wordEndFrame],
+          [0, 1],
+          { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+        );
+
+        const scale = isActive ? 1 + progress * 0.08 : 1;
+        const color = isActive || isPast ? activeColor : inactiveColor;
+
+        return (
+          <span
+            key={i}
+            style={{
+              color,
+              display: "inline-block",
+              transform: `scale(${scale})`,
+              transition: "color 0.1s",
+              marginRight: i < words.length - 1 ? "0.3em" : 0,
+            }}
+          >
+            {word.word}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 export const LyricsLineComponent: React.FC<{
   line: LyricLine;
   style: StyleConfig;
@@ -132,6 +181,7 @@ export const LyricsLineComponent: React.FC<{
       : "";
 
   const isCharAnim = variant === "typewriter" || variant === "handwritten";
+  const isKaraoke = variant === "karaoke";
   const beatTransform = `scale(${beat.scale})`;
   const combinedTransform = transform ? `${beatTransform} ${transform}` : beatTransform;
 
@@ -159,7 +209,14 @@ export const LyricsLineComponent: React.FC<{
           transform: combinedTransform,
         }}
       >
-        {isCharAnim ? (
+        {isKaraoke && line.words && line.words.length > 0 ? (
+          <KaraokeText
+            words={line.words}
+            frame={frame}
+            activeColor={style.textColor}
+            inactiveColor={`${style.textColor}55`}
+          />
+        ) : isCharAnim ? (
           <TypewriterText
             text={line.text}
             frame={frame}

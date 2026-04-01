@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { existsSync } from "fs";
-import { readFile } from "fs/promises";
+import { readFile, unlink, stat } from "fs/promises";
 import { join } from "path";
 import { execFile } from "child_process";
 import { randomUUID } from "crypto";
@@ -29,7 +28,9 @@ export async function POST(req: Request) {
   // Sanitize filename
   const safe = audioFilename.replace(/[^a-zA-Z0-9._-]/g, "");
   const audioPath = join(TMP_DIR, safe);
-  if (!existsSync(audioPath)) {
+  try {
+    await stat(audioPath);
+  } catch {
     return NextResponse.json({ error: "Audio file not found" }, { status: 404 });
   }
 
@@ -99,6 +100,10 @@ function extractSnippet(audioPath: string): Promise<Buffer> {
               return;
             }
             readFile(outPath)
+              .then((buf) => {
+                unlink(outPath).catch(() => {});
+                return buf;
+              })
               .then(resolve)
               .catch(reject);
           }

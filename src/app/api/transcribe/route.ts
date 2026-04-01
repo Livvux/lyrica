@@ -3,6 +3,7 @@ import { writeFile, mkdir, readFile } from "fs/promises";
 import path from "path";
 import { createHash, randomUUID } from "crypto";
 import { getProvider } from "@/lib/transcription";
+import { rateLimit } from "@/lib/rate-limit";
 import type { TranscriptionResult } from "@/types/lyrics";
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
@@ -31,7 +32,7 @@ async function transcribeWithCache(buffer: Buffer, fileName: string, mimeType: s
 
   const cached = await getCachedResult(hash);
   if (cached) {
-    console.log(`Transcription cache hit: ${hash}`);
+    // Cache hit — skip API call
     return cached;
   }
 
@@ -44,6 +45,9 @@ async function transcribeWithCache(buffer: Buffer, fileName: string, mimeType: s
 }
 
 export async function POST(request: Request) {
+  const limited = rateLimit("transcribe", { windowMs: 60_000, max: 5 });
+  if (limited) return limited;
+
   try {
     const formData = await request.formData();
 
@@ -88,9 +92,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (file.size > 200 * 1024 * 1024) {
+    if (file.size > 500 * 1024 * 1024) {
       return NextResponse.json(
-        { error: "Datei zu groß. Maximal 200 MB erlaubt." },
+        { error: "Datei zu groß. Maximal 500 MB erlaubt." },
         { status: 400 }
       );
     }

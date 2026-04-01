@@ -18,24 +18,32 @@ export interface LyricLine {
   endFrame: number;
   startSec: number;
   endSec: number;
+  words?: TranscriptionWord[];
 }
 
 export type EffectIntensity = "off" | "subtle" | "strong";
 
 export type VisualizerMode = "none" | "rainbow" | "mono";
 
-export type AnimationVariant = "fade-drift" | "zoom" | "slide-horizontal" | "typewriter" | "handwritten";
+export type AnimationVariant = "fade-drift" | "zoom" | "slide-horizontal" | "typewriter" | "handwritten" | "karaoke";
+
+export type BgType = "image" | "video";
+
+export type PostEffect = "none" | "glitch" | "vhs" | "film-grain" | "chromatic-aberration" | "camera-shake";
 
 export interface StyleConfig {
   fontSize: number;
   fontFamily: string;
   textColor: string;
   bgImage: string;
+  bgType: BgType;
   effectIntensity: EffectIntensity;
   beatReactive: boolean;
   animationVariant: AnimationVariant;
   visualizerMode: VisualizerMode;
   logoScale: number;
+  postEffect: PostEffect;
+  showWatermark: boolean;
 }
 
 export const COLOR_PRESETS = ["#ffffff", "#fbbf24", "#22d3ee", "#f472b6"] as const;
@@ -45,12 +53,90 @@ export const DEFAULT_STYLE: StyleConfig = {
   fontFamily: "Inter",
   textColor: "#ffffff",
   bgImage: "/bg-default.jpg",
+  bgType: "image",
   effectIntensity: "subtle",
   beatReactive: true,
   animationVariant: "fade-drift",
   visualizerMode: "none",
   logoScale: 100,
+  postEffect: "none",
+  showWatermark: true,
 };
+
+export interface StylePreset {
+  name: string;
+  description: string;
+  style: Partial<StyleConfig>;
+}
+
+export const STYLE_PRESETS: StylePreset[] = [
+  {
+    name: "Neon",
+    description: "Leuchtende Farben, starke Effekte",
+    style: {
+      textColor: "#22d3ee",
+      animationVariant: "zoom",
+      effectIntensity: "strong",
+      beatReactive: true,
+      fontSize: 80,
+    },
+  },
+  {
+    name: "Minimal",
+    description: "Schlicht und elegant",
+    style: {
+      textColor: "#ffffff",
+      animationVariant: "fade-drift",
+      effectIntensity: "off",
+      beatReactive: false,
+      fontSize: 72,
+    },
+  },
+  {
+    name: "Retro",
+    description: "Warme Farben, Typewriter-Effekt",
+    style: {
+      textColor: "#fbbf24",
+      animationVariant: "typewriter",
+      effectIntensity: "subtle",
+      beatReactive: true,
+      fontSize: 76,
+    },
+  },
+  {
+    name: "Cinematic",
+    description: "Filmisch, dramatisch",
+    style: {
+      textColor: "#ffffff",
+      animationVariant: "slide-horizontal",
+      effectIntensity: "subtle",
+      beatReactive: true,
+      fontSize: 84,
+    },
+  },
+  {
+    name: "Handschrift",
+    description: "Organisch, persönlich",
+    style: {
+      textColor: "#f472b6",
+      animationVariant: "handwritten",
+      effectIntensity: "subtle",
+      beatReactive: false,
+      fontSize: 76,
+    },
+  },
+  {
+    name: "Karaoke",
+    description: "Wort-für-Wort Highlighting",
+    style: {
+      textColor: "#ffffff",
+      animationVariant: "karaoke",
+      effectIntensity: "subtle",
+      beatReactive: true,
+      fontSize: 80,
+    },
+  },
+];
 
 export type RenderQuality = "draft" | "full";
 

@@ -1,6 +1,11 @@
 import { AbsoluteFill, Img, staticFile } from "remotion";
 
-export const Watermark: React.FC = () => {
+interface WatermarkProps {
+  show: boolean;
+}
+
+export const Watermark: React.FC<WatermarkProps> = ({ show }) => {
+  if (!show) return null;
   return (
     <AbsoluteFill
       style={{

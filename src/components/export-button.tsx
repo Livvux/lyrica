@@ -141,7 +141,15 @@ export function ExportButton({ config }: ExportButtonProps) {
         </div>
       )}
       {state.status === "error" && (
-        <p className="text-sm text-red-400 text-center">{state.message}</p>
+        <div className="flex items-center justify-center gap-2">
+          <p className="text-sm text-red-400">{state.message}</p>
+          <button
+            onClick={() => setState({ status: "idle" })}
+            className="text-xs text-white/30 transition hover:text-white/50"
+          >
+            Schließen
+          </button>
+        </div>
       )}
     </div>
   );

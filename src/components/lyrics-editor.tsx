@@ -5,9 +5,13 @@ import type { LyricLine } from "@/types/lyrics";
 interface LyricsEditorProps {
   lines: LyricLine[];
   onChange: (lines: LyricLine[]) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 }
 
-export function LyricsEditor({ lines, onChange }: LyricsEditorProps) {
+export function LyricsEditor({ lines, onChange, onUndo, onRedo, canUndo, canRedo }: LyricsEditorProps) {
   function updateLine(index: number, updates: Partial<LyricLine>) {
     const updated = lines.map((line, i) =>
       i === index ? { ...line, ...updates } : line
@@ -21,13 +25,35 @@ export function LyricsEditor({ lines, onChange }: LyricsEditorProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium text-white/60 mb-1">
-        Lyrics bearbeiten
-      </h3>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-medium text-white/60">
+          Lyrics bearbeiten
+        </h3>
+        {(onUndo || onRedo) && (
+          <div className="flex gap-1">
+            <button
+              onClick={onUndo}
+              disabled={!canUndo}
+              className="rounded px-2 py-0.5 text-xs text-white/40 transition hover:bg-white/10 hover:text-white/60 disabled:opacity-30 disabled:pointer-events-none"
+              title="Rückgängig (Cmd+Z)"
+            >
+              Rückgängig
+            </button>
+            <button
+              onClick={onRedo}
+              disabled={!canRedo}
+              className="rounded px-2 py-0.5 text-xs text-white/40 transition hover:bg-white/10 hover:text-white/60 disabled:opacity-30 disabled:pointer-events-none"
+              title="Wiederholen (Cmd+Shift+Z)"
+            >
+              Wiederholen
+            </button>
+          </div>
+        )}
+      </div>
       <div className="flex flex-col gap-1.5 max-h-80 overflow-y-auto pr-1">
         {lines.map((line, i) => (
           <div
-            key={i}
+            key={`${line.startSec}-${line.endSec}`}
             className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2"
           >
             <span className="text-xs text-white/30 w-6 shrink-0 text-right">
