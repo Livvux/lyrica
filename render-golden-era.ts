@@ -28,7 +28,8 @@ async function uploadBg(): Promise<string> {
   if (!res.ok) throw new Error(`upload-bg fehlgeschlagen: ${await res.text()}`);
   const { filename } = await res.json() as { filename: string };
   log(`Bild hochgeladen: ${filename}`);
-  return `/api/audio/${filename}`;
+  // Return just the filename — render-video.ts will handle the path correctly
+  return filename;
 }
 
 async function transcribeAudio(): Promise<{ result: TranscriptionResult; audioFilename: string }> {

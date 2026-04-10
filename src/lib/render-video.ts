@@ -149,14 +149,25 @@ export async function renderVideo(
 
   // Handle background image: resize to render dimensions if needed
   let bgImageForRender = config.style.bgImage;
-  if (config.style.bgImage.includes("/api/audio/")) {
-    const bgFilename = config.style.bgImage.split("/").pop()!;
-    const bgSrc = path.join(tmpDir, bgFilename);
-    const bgDest = path.join(publicDir, bgFilename);
-    log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
-    await resizeBgIfNeeded(bgSrc, bgDest, renderWidth, renderHeight);
-    tmpFilesToClean.push(bgDest);
-    bgImageForRender = `/${bgFilename}`;
+  // bgImage can be just filename (from upload-bg) or /api/audio/filename (legacy) or /filename
+  const bgImageBasename = config.style.bgImage.replace(/^\/api\/audio\//, "").replace(/^\//, "");
+  
+  if (bgImageBasename) {
+    const bgSrc = path.join(tmpDir, bgImageBasename);
+    try {
+      await stat(bgSrc); // Check if file exists in tmp
+      const bgDest = path.join(publicDir, bgImageBasename);
+      log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
+      await resizeBgIfNeeded(bgSrc, bgDest, renderWidth, renderHeight);
+      tmpFilesToClean.push(bgDest);
+      bgImageForRender = `/${bgImageBasename}`;
+    } catch {
+      // File not in tmp/lyrica - might already be in public/ or is an external URL
+      log(`Warnung: Hintergrundbild nicht in tmp/lyrica gefunden: ${bgImageBasename}`);
+      if (!config.style.bgImage.startsWith("http")) {
+        bgImageForRender = `/${bgImageBasename}`;
+      }
+    }
   }
 
   const renderConfig: VideoConfig = {

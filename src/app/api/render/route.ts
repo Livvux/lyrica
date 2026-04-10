@@ -45,6 +45,7 @@ const StyleConfigSchema = z.object({
   animationVariant: z.enum(["fade-drift", "zoom", "slide-horizontal", "typewriter", "handwritten", "karaoke"]),
   visualizerMode: z.enum(["none", "rainbow", "mono", "wave"]),
   logoScale: z.number(),
+  customLogo: z.string().nullable(),
   postEffect: z.enum(["none", "glitch", "vhs", "film-grain", "chromatic-aberration", "camera-shake"]),
   showWatermark: z.boolean(),
   waveConfig: WaveConfigSchema,

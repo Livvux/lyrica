@@ -2,10 +2,21 @@ import { AbsoluteFill, Img, staticFile } from "remotion";
 
 interface WatermarkProps {
   show: boolean;
+  customLogo: string | null;
+  logoScale: number;
 }
 
-export const Watermark: React.FC<WatermarkProps> = ({ show }) => {
+export const Watermark: React.FC<WatermarkProps> = ({ show, customLogo, logoScale }) => {
   if (!show) return null;
+
+  const baseHeight = 50;
+  const height = baseHeight * (logoScale / 100);
+  const logoSrc = customLogo
+    ? customLogo.startsWith("/")
+      ? staticFile(customLogo.split("/").pop()!)
+      : staticFile(customLogo)
+    : staticFile("logo.svg");
+
   return (
     <AbsoluteFill
       style={{
@@ -15,9 +26,9 @@ export const Watermark: React.FC<WatermarkProps> = ({ show }) => {
       }}
     >
       <Img
-        src={staticFile("logo.svg")}
+        src={logoSrc}
         style={{
-          height: 50,
+          height,
           opacity: 0.8,
         }}
       />

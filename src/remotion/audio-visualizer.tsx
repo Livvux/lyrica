@@ -8,6 +8,7 @@ interface AudioVisualizerProps {
   mode: VisualizerMode;
   monoColor: string;
   logoScale: number;
+  customLogo: string | null;
   isDraft?: boolean;
   waveConfig?: WaveConfig;
 }
@@ -113,6 +114,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   mode,
   monoColor,
   logoScale,
+  customLogo,
   isDraft,
   waveConfig: wc,
 }) => {
@@ -124,6 +126,13 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   const ls = logoScale / 100;
   const logoW = BASE_LOGO_WIDTH * ls;
   const logoH = BASE_LOGO_HEIGHT * ls;
+
+  // Resolve logo URL for Remotion staticFile
+  const resolvedLogo = customLogo
+    ? customLogo.startsWith("/api/audio/")
+      ? staticFile(customLogo.replace("/api/audio/", ""))
+      : staticFile(customLogo)
+    : staticFile("logo.svg");
 
   // Shared center ball + logo renderer
   const centerBall = (
@@ -139,7 +148,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
       />
       <g clipPath="url(#ball-clip)">
         <image
-          href={staticFile("logo.svg")}
+          href={resolvedLogo}
           x={CX - logoW / 2}
           y={CY - logoH / 2}
           width={logoW}

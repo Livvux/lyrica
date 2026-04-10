@@ -78,7 +78,11 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
       {postEffect === "glitch" && (
         <GlitchEffect intensity={style.effectIntensity} bassEnergy={beat.bassEnergy} />
       )}
-      <Watermark show={style.showWatermark} />
+      <Watermark
+        show={style.showWatermark}
+        customLogo={style.customLogo}
+        logoScale={style.logoScale}
+      />
     </AbsoluteFill>
   );
 };

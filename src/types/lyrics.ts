@@ -58,6 +58,7 @@ export interface StyleConfig {
   animationVariant: AnimationVariant;
   visualizerMode: VisualizerMode;
   logoScale: number;
+  customLogo: string | null;
   postEffect: PostEffect;
   showWatermark: boolean;
   waveConfig: WaveConfig;
@@ -76,6 +77,7 @@ export const DEFAULT_STYLE: StyleConfig = {
   animationVariant: "fade-drift",
   visualizerMode: "none",
   logoScale: 100,
+  customLogo: null,
   postEffect: "none",
   showWatermark: true,
   waveConfig: DEFAULT_WAVE_CONFIG,
