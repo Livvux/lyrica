@@ -165,6 +165,7 @@ async function main() {
       logoScale: 217,
       postEffect: "camera-shake",
       showWatermark: false,
+      customLogo: null,
       waveConfig: { colors: ["#3a5fcd", "#ff00ff", "#ff0000", "#ffb90f", "#ffffff"], gain: 280, radius: 140, points: 32, spread: 0.55 },
     },
   };
