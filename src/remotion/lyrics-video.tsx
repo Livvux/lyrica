@@ -54,6 +54,7 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
         mode={style.visualizerMode}
         monoColor={style.textColor}
         logoScale={style.logoScale}
+        customLogo={style.customLogo}
         isDraft={isDraft}
         waveConfig={style.waveConfig}
       />
