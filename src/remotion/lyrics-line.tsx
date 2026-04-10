@@ -16,11 +16,16 @@ function getAnimationValues(
     return { opacity: 1, transform: "" };
   }
 
+  // Ensure keyframes are strictly monotonically increasing
+  const fadeInEnd = line.startFrame + fade;
+  const fadeOutStart = Math.max(fadeInEnd + 1, line.endFrame - fade);
+  const endFrame = Math.max(fadeOutStart + 1, line.endFrame);
+
   const keyframes = [
     line.startFrame,
-    line.startFrame + fade,
-    line.endFrame - fade,
-    line.endFrame,
+    fadeInEnd,
+    fadeOutStart,
+    endFrame,
   ];
   const clamp = { extrapolateLeft: "clamp" as const, extrapolateRight: "clamp" as const };
 
@@ -126,7 +131,7 @@ function KaraokeText({
     <>
       {words.map((word, i) => {
         const wordStartFrame = Math.round(word.startSec * FPS);
-        const wordEndFrame = Math.round(word.endSec * FPS);
+        const wordEndFrame = Math.max(Math.round(word.endSec * FPS), wordStartFrame + 1);
         const isActive = frame >= wordStartFrame && frame <= wordEndFrame;
         const isPast = frame > wordEndFrame;
 
