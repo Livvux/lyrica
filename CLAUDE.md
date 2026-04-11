@@ -17,11 +17,32 @@ pnpm type-check       # TypeScript strict check (tsc --noEmit)
 
 There are no automated tests. The `test-*.ts` files in the root are manual scripts run with `npx tsx`.
 
+## Production Deployment (Mac Mini)
+
+Production runs on **Mac Mini M4 Pro** via PM2. URL: `https://lyrica.ts.lkmedia.xyz`
+
+```bash
+./deploy.sh           # Sync → build → restart on Mac Mini (einziger Deploy-Befehl)
+```
+
+**Wichtig — nie manuell ändern:**
+- `.env.local` auf dem Mac Mini (`~/dev/lyrica/.env.local`) enthält die Production-API-Keys. Wird durch `.rsyncignore` und `.gitignore` geschützt und nie vom MacBook überschrieben.
+- `ecosystem.config.js` auf dem Mac Mini enthält PORT=3001 und den ffmpeg-PATH. Ebenfalls nicht in git und nicht durch Rsync überschreibbar.
+- **Nie** `rsync` ohne `--exclude-from=.rsyncignore` ausführen — sonst werden die Keys überschrieben.
+
+**Mac Mini Setup:**
+- PM2 verwaltet den Prozess, startet automatisch beim Reboot (LaunchAgent)
+- Port 3001 (Port 3000 = AdGuard Home)
+- ffmpeg unter `/opt/homebrew/bin/ffmpeg` (arm64-nativ, für Background-Resize)
+- Chrome unter `/Applications/Google Chrome.app` (Universal Binary, läuft als arm64)
+- Rendering: 12 Worker Draft-Mode, 10 Worker Full-Mode (M4 Pro: 8 P-Kerne + 4 E-Kerne)
+
 ## Environment Variables
 
 - `OPENAI_API_KEY` — OpenAI Whisper transcription
 - `GROQ_API_KEY` — Groq Whisper transcription
 - `TRANSCRIPTION_PROVIDER` — `"openai"` (default) or `"groq"`
+- `CHROME_EXECUTABLE` — Pfad zu Chrome/Chromium (auf Mac Mini: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`)
 
 ## Architecture
 
@@ -66,3 +87,7 @@ Set to 30MB in `next.config.ts` to handle audio file uploads.
 ## Stack
 
 Next.js 15 (App Router, Turbopack) · React 19 · TypeScript (strict) · Tailwind CSS 4 · Remotion 4 · Groq SDK · OpenAI SDK
+
+## Fonts API
+
+`src/app/api/fonts/` ruft `fc-list` auf (Linux) bzw. fällt auf macOS auf eine Fallback-Liste zurück, da `fc-list` dort nicht verfügbar ist. System-Fonts auf dem Mac Mini sind daher auf die Fallback-Liste beschränkt.
