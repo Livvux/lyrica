@@ -1,5 +1,6 @@
 import path from "path";
 import os from "os";
+import { existsSync } from "fs";
 import { copyFile, unlink, stat } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -99,8 +100,14 @@ async function resizeBgIfNeeded(
     return;
   }
 
+  // Resolve ffmpeg: prefer Homebrew arm64 path on macOS, fall back to PATH
+  const ffmpegBin =
+    process.platform === "darwin" && existsSync("/opt/homebrew/bin/ffmpeg")
+      ? "/opt/homebrew/bin/ffmpeg"
+      : "ffmpeg";
+
   try {
-    await execFileAsync("ffmpeg", [
+    await execFileAsync(ffmpegBin, [
       "-i", srcPath,
       "-vf", `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight}`,
       "-q:v", "2",
@@ -217,11 +224,12 @@ export async function renderVideo(
     log(`Composition: ${composition.width}x${composition.height}, ${composition.durationInFrames} Frames`);
 
     const cpus = os.cpus().length;
-    // Thread model at 720p uses ~250MB/tab, 1080p ~500MB/tab.
-    // Container: 32GB RAM, 10 CPU cores → concurrency limited by CPU, not RAM.
+    // Thread model: 720p ~250MB/tab, 1080p ~500MB/tab.
+    // M4 Pro: 8 performance + 4 efficiency cores = 12 total, 24GB unified memory.
+    // Draft: saturate all cores. Full: leave 2 for system/Next.js server.
     const concurrency = isDraft
-      ? Math.min(cpus, 10)
-      : Math.min(Math.max(2, cpus - 1), 10);
+      ? cpus
+      : Math.max(2, cpus - 2);
 
     log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
     log(`Codec: H.264, Bitrate: ${isDraft ? "4M" : "8M"}, Preset: ${isDraft ? "ultrafast" : "veryfast"}, HW-Accel: if-possible`);
@@ -267,7 +275,6 @@ export async function renderVideo(
       encodingMaxRate: isDraft ? "6M" : "12M",
       chromiumOptions: {
         gl: "angle",
-        enableMultiProcessOnLinux: true,
       },
       onProgress: ({ progress }) => {
         onProgress?.({ phase: "rendering", progress });

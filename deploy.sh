@@ -1,23 +1,18 @@
 #!/bin/bash
-set -euo pipefail
+# Deploy Lyrica to Mac Mini
+# Schützt .env.local und ecosystem.config.js auf dem Ziel — werden nie überschrieben.
 
-LOG="/opt/lyrica/deploy.log"
-REPO="/opt/lyrica"
+set -e
 
-echo "========================================" >> "$LOG"
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Deploy triggered" >> "$LOG"
+TARGET="macmini:~/dev/lyrica"
 
-cd "$REPO"
+echo "→ Syncing code..."
+rsync -avz --exclude-from=".rsyncignore" ./ "$TARGET/"
 
-echo "[$(date '+%H:%M:%S')] Pulling latest code…" >> "$LOG"
-git fetch origin main >> "$LOG" 2>&1
-git reset --hard origin/main >> "$LOG" 2>&1
+echo "→ Building..."
+ssh macmini "cd ~/dev/lyrica && pnpm build"
 
-echo "[$(date '+%H:%M:%S')] Building Docker image…" >> "$LOG"
-docker build -t lyrica:latest . >> "$LOG" 2>&1
+echo "→ Restarting..."
+ssh macmini "cd ~/dev/lyrica && pm2 restart ecosystem.config.js --update-env"
 
-echo "[$(date '+%H:%M:%S')] Restarting container…" >> "$LOG"
-docker compose down >> "$LOG" 2>&1
-docker compose up -d >> "$LOG" 2>&1
-
-echo "[$(date '+%H:%M:%S')] Deploy complete ✓" >> "$LOG"
+echo "✓ Done — https://lyrica.ts.lkmedia.xyz"
