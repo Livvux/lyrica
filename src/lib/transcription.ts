@@ -181,13 +181,17 @@ async function separateVocals(inputPath: string): Promise<{ vocalsPath: string; 
   const inputName = path.basename(inputPath, path.extname(inputPath));
 
   try {
-    await execFileAsync("python3", [
+    // Use absolute python path to avoid picking up a Homebrew python that doesn't have demucs.
+    // Include /opt/homebrew/bin so Demucs can find ffmpeg on macOS Apple Silicon.
+    const python = process.env.DEMUCS_PYTHON ?? "python3";
+    const envPath = `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? "/usr/bin:/bin"}`;
+    await execFileAsync(python, [
       "-m", "demucs",
       "--two-stems=vocals",
-      "--model", "htdemucs_ft",
+      "-n", "htdemucs_ft",
       "-o", outDir,
       inputPath,
-    ], { timeout: 600_000 }); // 10min max for long tracks
+    ], { timeout: 600_000, env: { ...process.env, PATH: envPath } });
 
     const vocalsPath = path.join(outDir, "htdemucs_ft", inputName, "vocals.wav");
     await stat(vocalsPath); // verify output exists
