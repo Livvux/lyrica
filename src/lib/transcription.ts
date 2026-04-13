@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import Groq from "groq-sdk";
 import { execFile } from "child_process";
-import { writeFile, readFile, unlink, mkdir, stat } from "fs/promises";
+import { writeFile, readFile, unlink, mkdir, stat, rm } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { promisify } from "util";
@@ -166,6 +166,65 @@ async function cleanup(filePath: string) {
   try { await unlink(filePath); } catch { /* ignore */ }
 }
 
+/** Silently remove a temp directory tree. */
+async function cleanupDir(dirPath: string) {
+  try { await rm(dirPath, { recursive: true, force: true }); } catch { /* ignore */ }
+}
+
+/**
+ * Separate vocals from background using Demucs (htdemucs_ft model).
+ * Returns { vocalsPath, outDir } on success, or null if Demucs is not installed or fails.
+ * Falls back gracefully — the rest of the pipeline uses the original audio.
+ */
+async function separateVocals(inputPath: string): Promise<{ vocalsPath: string; outDir: string } | null> {
+  const outDir = path.join(TMP_DIR, `demucs-${randomUUID()}`);
+  const inputName = path.basename(inputPath, path.extname(inputPath));
+
+  try {
+    await execFileAsync("python3", [
+      "-m", "demucs",
+      "--two-stems=vocals",
+      "--model", "htdemucs_ft",
+      "-o", outDir,
+      inputPath,
+    ], { timeout: 600_000 }); // 10min max for long tracks
+
+    const vocalsPath = path.join(outDir, "htdemucs_ft", inputName, "vocals.wav");
+    await stat(vocalsPath); // verify output exists
+    return { vocalsPath, outDir };
+  } catch {
+    await cleanupDir(outDir); // remove partial output on failure
+    return null;
+  }
+}
+
+/**
+ * Attempt vocal separation before transcription.
+ * Returns the vocals File if Demucs succeeds, or the original audioFile as fallback.
+ * The returned `cleanupVocals` must be called in a finally block.
+ */
+async function withVocals(audioFile: File): Promise<{ file: File; cleanupVocals: () => Promise<void> }> {
+  await mkdir(TMP_DIR, { recursive: true });
+
+  const ext = path.extname(audioFile.name) || ".mp3";
+  const inputPath = path.join(TMP_DIR, `vc-input-${randomUUID()}${ext}`);
+  const buffer = Buffer.from(await audioFile.arrayBuffer());
+  await writeFile(inputPath, buffer);
+
+  const result = await separateVocals(inputPath);
+  await cleanup(inputPath);
+
+  if (!result) {
+    return { file: audioFile, cleanupVocals: async () => {} };
+  }
+
+  const file = await fileFromPath(result.vocalsPath, "vocals.wav");
+  return {
+    file,
+    cleanupVocals: async () => cleanupDir(result.outDir),
+  };
+}
+
 /**
  * Prepare audio for transcription API:
  * 1. If file <= 25MB, use as-is
@@ -235,13 +294,15 @@ function createOpenAIProvider(): TranscriptionProvider {
 
   return {
     async transcribe(audioFile: File): Promise<TranscriptionResult> {
-      const segments = await prepareAudio(audioFile);
+      const { file: vocalFile, cleanupVocals } = await withVocals(audioFile);
+      const segments = await prepareAudio(vocalFile);
       try {
         return await transcribeAndMerge(segments, transcribeSingle, "openai");
       } finally {
         for (const seg of segments) {
           if (seg.tempPath) await cleanup(seg.tempPath);
         }
+        await cleanupVocals();
       }
     },
   };
@@ -280,13 +341,15 @@ function createGroqProvider(): TranscriptionProvider {
 
   return {
     async transcribe(audioFile: File): Promise<TranscriptionResult> {
-      const segments = await prepareAudio(audioFile);
+      const { file: vocalFile, cleanupVocals } = await withVocals(audioFile);
+      const segments = await prepareAudio(vocalFile);
       try {
         return await transcribeAndMerge(segments, transcribeSingle, "groq");
       } finally {
         for (const seg of segments) {
           if (seg.tempPath) await cleanup(seg.tempPath);
         }
+        await cleanupVocals();
       }
     },
   };
