@@ -9,7 +9,7 @@ import type { MixTrack } from "@/types/lyrics";
 const TMP_DIR = join(process.cwd(), "tmp", "lyrica");
 const ACOUSTID_API = "https://api.acoustid.org/v2/lookup";
 const SAMPLE_INTERVAL_SEC = 60;
-const SAMPLE_LENGTH_SEC = 20;
+const SAMPLE_LENGTH_SEC = 120;
 
 function getFpcalcPath(): string {
   return process.env.FPCALC_PATH ?? "fpcalc";
