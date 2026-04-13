@@ -239,10 +239,7 @@ export async function renderVideo(
     const cpus = os.cpus().length;
     const totalMemMb = os.totalmem() / 1024 / 1024;
     const cpuCap = isDraft ? cpus : Math.max(2, cpus - 2);
-    // Hard caps: Full reduced to 6 — each Chrome worker uses ~2 GB actual RAM,
-    // not the 550 MB estimate we had before. At 8 workers on a 24 GB machine
-    // that was ~82 % RAM which risks OS swap. 6 workers → ~62 %.
-    const hardCap = isDraft ? 10 : 6;
+    const hardCap = isDraft ? 10 : 8;
     const memPerWorkerMb = isDraft ? 800 : 2000; // realistic Chrome estimates
     const memoryCap = Math.max(2, Math.floor((totalMemMb * 0.6) / memPerWorkerMb));
     const concurrency = Math.max(2, Math.min(cpuCap, hardCap, memoryCap));
