@@ -104,19 +104,24 @@ export interface RenderSummary {
 export function generateHints(summary: RenderSummary): string[] {
   const hints: string[] = [];
 
+  const memPercent = Math.round((summary.peakMemMb / summary.memTotalMb) * 100);
+
   if (summary.peakCpuPercent < 50) {
-    hints.push(`CPU nur ${summary.peakCpuPercent}% ausgelastet — Concurrency könnte höher sein (aktuell ${summary.concurrency} Worker, ${summary.cpuCount} CPUs verfügbar)`);
+    if (memPercent > 70) {
+      hints.push(`CPU nur ${summary.peakCpuPercent}% — RAM (${memPercent}%) ist der Engpass, nicht CPU. Concurrency bewusst begrenzt (${summary.concurrency} Worker)`);
+    } else {
+      hints.push(`CPU nur ${summary.peakCpuPercent}% ausgelastet — Concurrency könnte höher sein (aktuell ${summary.concurrency} Worker, ${summary.cpuCount} CPUs verfügbar)`);
+    }
   } else if (summary.peakCpuPercent > 90) {
     hints.push(`CPU bei ${summary.peakCpuPercent}% — voll ausgelastet, mehr CPUs würden helfen`);
   } else {
     hints.push(`CPU-Auslastung: ${summary.peakCpuPercent}% — gute Nutzung`);
   }
 
-  const memPercent = Math.round((summary.peakMemMb / summary.memTotalMb) * 100);
   if (memPercent < 30) {
-    hints.push(`RAM nur ${memPercent}% genutzt (${summary.peakMemMb} MB / ${summary.memTotalMb} MB) — Container-Limit könnte niedriger sein`);
+    hints.push(`RAM nur ${memPercent}% genutzt (${summary.peakMemMb} MB / ${summary.memTotalMb} MB) — Concurrency könnte höher sein`);
   } else if (memPercent > 80) {
-    hints.push(`RAM bei ${memPercent}% — knapp, Container-Limit erhöhen oder Concurrency senken`);
+    hints.push(`RAM bei ${memPercent}% — zu knapp, Concurrency reduzieren`);
   } else {
     hints.push(`RAM-Nutzung: ${memPercent}% (${summary.peakMemMb} MB / ${summary.memTotalMb} MB) — passt`);
   }
