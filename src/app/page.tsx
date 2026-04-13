@@ -23,6 +23,7 @@ export default function Home() {
   const setLines = linesHistory.set;
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [durationSec, setDurationSec] = useState(0);
+  const [originalFilename, setOriginalFilename] = useState<string | null>(null);
   const [style, setStyle] = useState<StyleConfig>(DEFAULT_STYLE);
   const [lyricsActive, setLyricsActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -72,7 +73,7 @@ export default function Home() {
   }, [linesHistory]);
 
   const handleAudioUploaded = useCallback(
-    (url: string, duration: number) => {
+    (url: string, duration: number, filename: string) => {
       if (lines.length > 0) {
         const confirmed = window.confirm(
           "Du hast bereits Lyrics bearbeitet. Beim Hochladen eines neuen Songs werden die Lyrics zurückgesetzt. Fortfahren?"
@@ -81,6 +82,7 @@ export default function Home() {
       }
       setAudioUrl(url);
       setDurationSec(duration);
+      setOriginalFilename(filename);
       setLines([]);
       setLyricsActive(false);
       setTranscribeError(null);
@@ -135,7 +137,7 @@ export default function Home() {
       const identifyRes = await fetch("/api/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioFilename }),
+        body: JSON.stringify({ audioFilename, originalFilename }),
       });
       const identifyData = await identifyRes.json();
       songMatch = identifyData.match ?? null;

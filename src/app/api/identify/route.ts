@@ -8,20 +8,38 @@ import { sanitizeFilename } from "@/lib/sanitize-filename";
 const AUDD_API_URL = "https://api.audd.io/";
 const TMP_DIR = join(process.cwd(), "tmp", "lyrica");
 
+/**
+ * Parse "Artist - Title (feat. X).mp3" → { artist, title } or null.
+ * Handles common music file naming conventions.
+ */
+function parseFilename(filename: string): { artist: string; title: string } | null {
+  const base = filename.replace(/\.[^.]+$/, "").trim();
+  // Match: "Artist - Title" (with optional " (feat. ...)" suffix)
+  const match = base.match(/^(.+?)\s+-\s+(.+?)(?:\s+\(feat\..+\))?$/i);
+  if (!match) return null;
+  const artist = match[1].trim();
+  const title = match[2].trim().replace(/\s*\(feat\..+\)/i, "").trim();
+  if (!artist || !title) return null;
+  return { artist, title };
+}
+
 export async function POST(req: Request) {
   const apiKey = process.env.AUDD_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ match: null });
-  }
 
-  let body: { audioFilename?: string };
+  let body: { audioFilename?: string; originalFilename?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { audioFilename } = body;
+  const { audioFilename, originalFilename } = body;
+
+  // No AudD key → fall back to filename parsing immediately
+  if (!apiKey) {
+    const parsed = originalFilename ? parseFilename(originalFilename) : null;
+    return NextResponse.json({ match: parsed ?? null });
+  }
   if (!audioFilename || typeof audioFilename !== "string") {
     return NextResponse.json({ error: "audioFilename required" }, { status: 400 });
   }
@@ -61,7 +79,9 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({ match: null });
+    // AudD returned no match → try filename parsing as fallback
+    const parsed = originalFilename ? parseFilename(originalFilename) : null;
+    return NextResponse.json({ match: parsed ?? null });
   } catch {
     // Graceful degradation: if AudD fails, skip identification
     return NextResponse.json({ match: null });
