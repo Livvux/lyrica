@@ -32,6 +32,7 @@ function PreviewPlayerComponent({ config }: PreviewPlayerProps) {
           style={{ width: "100%", height: "100%" }}
           controls
           autoPlay={false}
+          acknowledgeRemotionLicense
         />
       </div>
     </div>
