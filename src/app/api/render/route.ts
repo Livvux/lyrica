@@ -10,7 +10,7 @@ import { getClientIp } from "@/lib/get-client-ip";
 import { startServerPerf } from "@/lib/perf";
 import type { VideoConfig } from "@/types/lyrics";
 
-const MAX_DURATION_FRAMES = 30 * 60 * 15; // 15 Minuten @ 30fps
+const MAX_DURATION_FRAMES = 30 * 60 * 120; // 120 Minuten @ 30fps
 
 const TranscriptionWordSchema = z.object({
   word: z.string(),
