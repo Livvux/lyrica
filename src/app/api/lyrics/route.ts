@@ -29,52 +29,66 @@ export async function POST(req: Request) {
   return NextResponse.json({ lyrics: null });
 }
 
+function lrclibDataToLyrics(data: {
+  syncedLyrics?: string;
+  plainLyrics?: string;
+}): ReferenceLyrics | null {
+  if (data.syncedLyrics) {
+    return {
+      source: "lrclib",
+      synced: true,
+      lines: parseLrc(data.syncedLyrics),
+      plainText: data.plainLyrics ?? data.syncedLyrics,
+    };
+  }
+  if (data.plainLyrics) {
+    return {
+      source: "lrclib",
+      synced: false,
+      lines: data.plainLyrics
+        .split("\n")
+        .filter((l: string) => l.trim().length > 0)
+        .map((l: string) => ({ text: l.trim() })),
+      plainText: data.plainLyrics,
+    };
+  }
+  return null;
+}
+
 async function fetchFromLrclib(
   artist: string,
   title: string,
   durationSec?: number
 ): Promise<ReferenceLyrics | null> {
   try {
-    const params = new URLSearchParams({
-      artist_name: artist,
-      track_name: title,
-    });
-    if (durationSec) {
-      params.set("duration", String(Math.round(durationSec)));
-    }
+    // Try exact lookup first
+    const params = new URLSearchParams({ artist_name: artist, track_name: title });
+    if (durationSec) params.set("duration", String(Math.round(durationSec)));
 
     const res = await fetch(`https://lrclib.net/api/get?${params}`, {
       headers: { "User-Agent": "Lyrica/1.0" },
       signal: AbortSignal.timeout(10_000),
     });
 
-    if (!res.ok) return null;
-
-    const data = await res.json();
-
-    // Prefer synced lyrics
-    if (data.syncedLyrics) {
-      return {
-        source: "lrclib",
-        synced: true,
-        lines: parseLrc(data.syncedLyrics),
-        plainText: data.plainLyrics ?? data.syncedLyrics,
-      };
+    if (res.ok) {
+      const data = await res.json();
+      const result = lrclibDataToLyrics(data);
+      if (result) return result;
     }
 
-    if (data.plainLyrics) {
-      return {
-        source: "lrclib",
-        synced: false,
-        lines: data.plainLyrics
-          .split("\n")
-          .filter((l: string) => l.trim().length > 0)
-          .map((l: string) => ({ text: l.trim() })),
-        plainText: data.plainLyrics,
-      };
-    }
+    // Fallback: fuzzy search (helps with slightly off titles from filename parsing)
+    const searchParams = new URLSearchParams({ artist_name: artist, track_name: title });
+    const searchRes = await fetch(`https://lrclib.net/api/search?${searchParams}`, {
+      headers: { "User-Agent": "Lyrica/1.0" },
+      signal: AbortSignal.timeout(10_000),
+    });
 
-    return null;
+    if (!searchRes.ok) return null;
+    const results: Array<{ syncedLyrics?: string; plainLyrics?: string }> =
+      await searchRes.json();
+    if (!Array.isArray(results) || results.length === 0) return null;
+
+    return lrclibDataToLyrics(results[0]);
   } catch {
     return null;
   }
