@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { VideoConfig, RenderQuality } from "@/types/lyrics";
+import type { VideoConfig } from "@/types/lyrics";
 
 interface ExportButtonProps {
   config: VideoConfig;
@@ -85,17 +85,17 @@ export function ExportButton({ config }: ExportButtonProps) {
     setLogs((prev) => [...prev, `[${ts}] ${message}`]);
   }
 
-  async function handleExport(quality: RenderQuality) {
+  async function handleExport() {
     setLogs([]);
     setShowLogs(false);
     setMetrics(null);
     setSummary(null);
-    addLog(`Export gestartet: ${quality === "draft" ? "Draft 720p" : "Full 1080p"}`);
+    addLog("Export gestartet: 1080p");
     setState({ status: "bundling", progress: 0 });
 
     const exportConfig: VideoConfig = {
       ...config,
-      renderQuality: quality,
+      renderQuality: "full",
     };
 
     const controller = new AbortController();
@@ -166,7 +166,7 @@ export function ExportButton({ config }: ExportButtonProps) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `lyrica-${quality === "draft" ? "draft-720p" : "1080p"}.mp4`;
+      a.download = "lyrica-1080p.mp4";
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -272,13 +272,7 @@ export function ExportButton({ config }: ExportButtonProps) {
       ) : (
         <div className="flex gap-3">
           <button
-            onClick={() => handleExport("draft")}
-            className="flex-1 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-          >
-            Schnell-Export (720p)
-          </button>
-          <button
-            onClick={() => handleExport("full")}
+            onClick={handleExport}
             className="flex-1 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black transition hover:bg-white/90"
           >
             Export (1080p)
