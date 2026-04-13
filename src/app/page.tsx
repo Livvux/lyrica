@@ -7,13 +7,14 @@ import { LyricsEditor } from "@/components/lyrics-editor";
 import { ExportButton } from "@/components/export-button";
 import { CustomizationPanel } from "@/components/customization-panel";
 import { LyricsValidationPanel } from "@/components/lyrics-validation-panel";
+import { MixTracklistPanel } from "@/components/mix-tracklist-panel";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { groupWordsIntoLines, getDurationInFrames } from "@/lib/timing";
 import { validateLines } from "@/lib/lyrics-validation";
 import { useHistory } from "@/lib/use-history";
 import { savePersistence, loadPersistence } from "@/lib/use-persistence";
 import { DEFAULT_STYLE } from "@/types/lyrics";
-import type { LyricLine, VideoConfig, StyleConfig, ValidationResult, SongMatch, ReferenceLyrics } from "@/types/lyrics";
+import type { LyricLine, VideoConfig, StyleConfig, ValidationResult, SongMatch, ReferenceLyrics, MixTrack, LineValidation } from "@/types/lyrics";
 
 type ValidationPhase = "idle" | "identifying" | "fetching" | "validating" | "done";
 
@@ -31,6 +32,7 @@ export default function Home() {
   const [validationPhase, setValidationPhase] = useState<ValidationPhase>("idle");
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [pendingLines, setPendingLines] = useState<LyricLine[]>([]);
+  const [showMixPanel, setShowMixPanel] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const previewUpdateMark = useRef(0);
 
@@ -168,6 +170,112 @@ export default function Home() {
     setValidationPhase("done");
   }
 
+  async function handleActivateMix() {
+    if (!audioUrl) return;
+    const audioFilename = audioUrl.split("/").pop();
+    if (!audioFilename) return;
+
+    setIsTranscribing(true);
+    setTranscribeError(null);
+    try {
+      const formData = new FormData();
+      formData.append("audioFilename", audioFilename);
+      const res = await fetch("/api/transcribe", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setTranscribeError(data.error ?? "Fehler bei der Transkription.");
+        return;
+      }
+      const grouped = groupWordsIntoLines(data.result.words);
+      setPendingLines(grouped);
+      setShowMixPanel(true);
+    } catch {
+      setTranscribeError("Fehler bei der Transkription.");
+    } finally {
+      setIsTranscribing(false);
+    }
+  }
+
+  async function runMixValidation(confirmedTracks: MixTrack[], grouped: LyricLine[]) {
+    setValidationPhase("fetching");
+    setValidationResult(null);
+
+    const allLineValidations: LineValidation[] = [];
+    let weightedScore = 0;
+    let totalLines = 0;
+    const mergedSongMatch: SongMatch | null = confirmedTracks[0]
+      ? { artist: confirmedTracks[0].artist, title: confirmedTracks[0].title }
+      : null;
+    let mergedReference: ReferenceLyrics | null = null;
+
+    for (const track of confirmedTracks) {
+      const trackIndices: number[] = [];
+      const trackLines: LyricLine[] = [];
+      grouped.forEach((line, i) => {
+        if (line.startSec >= track.startSec && line.startSec < track.endSec) {
+          trackIndices.push(i);
+          trackLines.push(line);
+        }
+      });
+      if (trackLines.length === 0) continue;
+
+      let reference: ReferenceLyrics | null = null;
+      try {
+        const lyricsRes = await fetch("/api/lyrics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            artist: track.artist,
+            title: track.title,
+            durationSec: track.endSec - track.startSec,
+          }),
+        });
+        const lyricsData = await lyricsRes.json();
+        reference = lyricsData.lyrics ?? null;
+        if (reference && !mergedReference) mergedReference = reference;
+      } catch {
+        // graceful — validate without reference
+      }
+
+      setValidationPhase("validating");
+      const songMatch: SongMatch = { artist: track.artist, title: track.title };
+      const segResult = validateLines(trackLines, songMatch, reference);
+
+      segResult.lineValidations.forEach((v) => {
+        allLineValidations.push({
+          ...v,
+          lineIndex: trackIndices[v.lineIndex] ?? v.lineIndex,
+        });
+      });
+
+      weightedScore += segResult.overallScore * trackLines.length;
+      totalLines += trackLines.length;
+    }
+
+    const overallScore = totalLines > 0 ? Math.round(weightedScore / totalLines) : 100;
+    setValidationResult({
+      songMatch: mergedSongMatch,
+      reference: mergedReference,
+      overallScore,
+      lineValidations: allLineValidations,
+    });
+    setValidationPhase("done");
+  }
+
+  async function handleMixConfirm(tracks: MixTrack[]) {
+    setShowMixPanel(false);
+    await runMixValidation(tracks, pendingLines);
+  }
+
+  function handleMixSkip() {
+    setShowMixPanel(false);
+    if (pendingLines.length > 0) {
+      setLines(pendingLines);
+      setLyricsActive(true);
+      setPendingLines([]);
+    }
+  }
+
   function handleValidationAccept(acceptedLines: LyricLine[]) {
     setLines(acceptedLines);
     setLyricsActive(true);
@@ -250,6 +358,12 @@ export default function Home() {
               onAccept={handleValidationAccept}
               onSkip={handleValidationSkip}
             />
+          ) : showMixPanel && !lyricsActive ? (
+            <MixTracklistPanel
+              audioFilename={audioUrl!.split("/").pop()!}
+              onConfirm={handleMixConfirm}
+              onSkip={handleMixSkip}
+            />
           ) : !lyricsActive ? (
             <div className="flex flex-col gap-2">
               <button
@@ -260,6 +374,13 @@ export default function Home() {
                 {isTranscribing
                   ? "Lyrics werden generiert..."
                   : "Lyrics aktivieren"}
+              </button>
+              <button
+                onClick={handleActivateMix}
+                disabled={isTranscribing}
+                className="rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white/60 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isTranscribing ? "Lyrics werden generiert..." : "Mix erkennen"}
               </button>
               {transcribeError && (
                 <p className="text-sm text-red-400 text-center">
