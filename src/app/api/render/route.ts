@@ -155,7 +155,7 @@ export async function POST(request: Request) {
         send({ phase: "error", error: "Fehler beim Rendern des Videos." });
         renderPerf({ status: 500, error: errorMsg });
       } finally {
-        controller.close();
+        try { controller.close(); } catch { /* already closed on client disconnect */ }
       }
     },
   });
