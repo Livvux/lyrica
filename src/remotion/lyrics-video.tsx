@@ -13,6 +13,36 @@ import {
   useCameraShake,
 } from "./effects";
 import type { VideoConfig } from "@/types/lyrics";
+import type { LyricLine } from "@/types/lyrics";
+
+function findFirstCandidateIndex(lines: LyricLine[], frame: number): number {
+  let low = 0;
+  let high = lines.length - 1;
+  let result = lines.length;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (lines[mid].endFrame >= frame) {
+      result = mid;
+      high = mid - 1;
+    } else {
+      low = mid + 1;
+    }
+  }
+  return result;
+}
+
+function getActiveLineIndices(lines: LyricLine[], frame: number): number[] {
+  if (lines.length === 0) return [];
+  const startIndex = findFirstCandidateIndex(lines, frame);
+  if (startIndex >= lines.length) return [];
+  const active: number[] = [];
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startFrame > frame) break;
+    if (line.endFrame >= frame) active.push(i);
+  }
+  return active;
+}
 
 export const LyricsVideo: React.FC<VideoConfig> = ({
   lines,
@@ -29,6 +59,7 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
       : staticFile(audioUrl);
 
   const frame = useCurrentFrame();
+  const activeLineIndices = getActiveLineIndices(lines, frame);
 
   const beat = useBeatPulse(
     resolvedAudioUrl,
@@ -59,10 +90,10 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
         waveConfig={style.waveConfig}
       />
       {audioUrl && <Audio src={resolvedAudioUrl} />}
-      {lines.map((line, i) => (
+      {activeLineIndices.map((index) => (
         <LyricsLineComponent
-          key={i}
-          line={line}
+          key={index}
+          line={lines[index]}
           style={style}
           beat={{ scale: beat.scale, glowOpacity: beat.glowOpacity }}
         />

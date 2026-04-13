@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 const hits = new Map<string, number[]>();
+const MAX_BUCKETS = 5000;
 
 /**
  * Simple in-memory sliding-window rate limiter.
@@ -8,10 +9,11 @@ const hits = new Map<string, number[]>();
  */
 export function rateLimit(
   key: string,
-  { windowMs, max }: { windowMs: number; max: number }
+  { windowMs, max, clientKey = "global" }: { windowMs: number; max: number; clientKey?: string }
 ): NextResponse | null {
   const now = Date.now();
-  const timestamps = hits.get(key) ?? [];
+  const bucketKey = `${key}:${clientKey}`;
+  const timestamps = hits.get(bucketKey) ?? [];
 
   // Remove expired entries
   const valid = timestamps.filter((t) => now - t < windowMs);
@@ -24,12 +26,14 @@ export function rateLimit(
   }
 
   valid.push(now);
-  hits.set(key, valid);
+  hits.set(bucketKey, valid);
 
   // Prevent memory leak: purge stale keys periodically
-  if (hits.size > 1000) {
+  if (hits.size > MAX_BUCKETS) {
     for (const [k, v] of hits) {
-      if (v.every((t) => now - t >= windowMs)) hits.delete(k);
+      if (v.length === 0 || v.every((t) => now - t >= windowMs * 2)) {
+        hits.delete(k);
+      }
     }
   }
 

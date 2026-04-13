@@ -1,11 +1,14 @@
 import path from "path";
 import os from "os";
 import { existsSync } from "fs";
-import { copyFile, unlink, stat } from "fs/promises";
+import { copyFile, stat, mkdir, rm } from "fs/promises";
 import { execFile } from "child_process";
+import { randomUUID } from "crypto";
 import { promisify } from "util";
 import { bundle } from "@remotion/bundler";
+import type { WebpackConfiguration } from "@remotion/bundler";
 import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
+import { sanitizeFilename } from "@/lib/sanitize-filename";
 import type { VideoConfig } from "@/types/lyrics";
 import { collectMetrics, generateHints, type RenderSummary, type SystemMetrics } from "./system-metrics";
 
@@ -29,17 +32,25 @@ export type RenderProgress = {
 let cachedBundleLocation: string | null = null;
 let bundlePromise: Promise<string> | null = null;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const webpackOverride = (currentConfig: any) => ({
+const webpackOverride = (currentConfig: WebpackConfiguration): WebpackConfiguration => ({
   ...currentConfig,
   resolve: {
     ...currentConfig.resolve,
     alias: {
-      ...(currentConfig.resolve?.alias ?? {}),
+      ...((currentConfig.resolve?.alias && !Array.isArray(currentConfig.resolve.alias))
+        ? currentConfig.resolve.alias
+        : {}),
       "@": path.join(process.cwd(), "src"),
     },
   },
 });
+
+function toSafeAssetName(raw: string): string | null {
+  const safe = sanitizeFilename(raw);
+  if (!safe || safe === "." || safe === "..") return null;
+  if (safe.includes("/") || safe.includes("\\")) return null;
+  return safe;
+}
 
 async function getOrCreateBundle(
   onProgress?: (p: RenderProgress) => void
@@ -62,11 +73,12 @@ async function getOrCreateBundle(
     entryPoint,
     onProgress: (p) => onProgress?.({ phase: "bundling", progress: p / 100 }),
     webpackOverride,
+  }).finally(() => {
+    bundlePromise = null;
   });
 
   const location = await bundlePromise;
   cachedBundleLocation = location;
-  bundlePromise = null;
   return location;
 }
 
@@ -136,6 +148,7 @@ export async function renderVideo(
   const log = (msg: string) => onLog?.(msg);
   const publicDir = path.join(process.cwd(), "public");
   const tmpDir = path.join(process.cwd(), "tmp", "lyrica");
+  let bundleAssetDir: string | null = null;
 
   const isDraft = config.renderQuality === "draft";
   const renderWidth = isDraft ? 1280 : 1920;
@@ -150,42 +163,9 @@ export async function renderVideo(
   log(`Dauer: ${durationSec.toFixed(1)}s → ${renderFrameCount} Frames`);
   log(`Lyrics: ${config.lines.length} Zeilen`);
 
-  const tmpFilesToClean: string[] = [];
-  const audioFilename = config.audioUrl.split("/").pop();
+  const audioFilename = toSafeAssetName(config.audioUrl.split("/").pop() ?? "");
   if (!audioFilename) throw new Error("Ungültige audioUrl: Dateiname konnte nicht extrahiert werden");
-
-  // Handle background image: resize to render dimensions if needed
-  let bgImageForRender = config.style.bgImage;
-  // bgImage can be just filename (from upload-bg) or /api/audio/filename (legacy) or /filename
-  const bgImageBasename = config.style.bgImage.replace(/^\/api\/audio\//, "").replace(/^\//, "");
-  
-  if (bgImageBasename) {
-    const bgSrc = path.join(tmpDir, bgImageBasename);
-    try {
-      await stat(bgSrc); // Check if file exists in tmp
-      const bgDest = path.join(publicDir, bgImageBasename);
-      log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
-      await resizeBgIfNeeded(bgSrc, bgDest, renderWidth, renderHeight);
-      tmpFilesToClean.push(bgDest);
-      bgImageForRender = `/${bgImageBasename}`;
-    } catch {
-      // File not in tmp/lyrica - might already be in public/ or is an external URL
-      log(`Warnung: Hintergrundbild nicht in tmp/lyrica gefunden: ${bgImageBasename}`);
-      if (!config.style.bgImage.startsWith("http")) {
-        bgImageForRender = `/${bgImageBasename}`;
-      }
-    }
-  }
-
-  const renderConfig: VideoConfig = {
-    ...config,
-    audioUrl: audioFilename,
-    style: { ...config.style, bgImage: bgImageForRender },
-    width: renderWidth,
-    height: renderHeight,
-    fps: renderFps,
-    durationInFrames: renderFrameCount,
-  };
+  let renderConfig: VideoConfig;
 
   try {
     log("Remotion-Bundle wird geladen…");
@@ -193,23 +173,56 @@ export async function renderVideo(
     const bundleLocation = await getOrCreateBundle(onProgress);
     log(`Bundle bereit (${((Date.now() - bundleStart) / 1000).toFixed(1)}s)`);
 
-    // Copy audio + bg into bundle dir so Remotion serves them same-origin (no CORS)
-    log("Audio wird ins Bundle kopiert…");
-    const audioSrc = path.join(tmpDir, audioFilename);
-    const audioDest = path.join(bundleLocation, audioFilename);
-    await copyFile(audioSrc, audioDest);
-    tmpFilesToClean.push(audioDest);
+    const assetDirName = `.lyrica-assets/${randomUUID()}`;
+    bundleAssetDir = path.join(bundleLocation, assetDirName);
+    await mkdir(bundleAssetDir, { recursive: true });
 
-    if (bgImageForRender.startsWith("/")) {
-      const bgFilename = bgImageForRender.slice(1);
-      const bgSrc = path.join(publicDir, bgFilename);
-      const bgDest = path.join(bundleLocation, bgFilename);
-      await copyFile(bgSrc, bgDest);
-      tmpFilesToClean.push(bgDest);
-      log("Hintergrundbild ins Bundle kopiert");
+    log("Audio wird in den Render-Asset-Ordner kopiert…");
+    const audioSrc = path.join(tmpDir, audioFilename);
+    const audioDest = path.join(bundleAssetDir, audioFilename);
+    await copyFile(audioSrc, audioDest);
+    const audioAssetPath = `/${assetDirName}/${audioFilename}`;
+
+    let bgImageForRender = config.style.bgImage;
+    const rawBgName = config.style.bgImage
+      .replace(/^\/api\/audio\//, "")
+      .replace(/^\//, "");
+    const bgImageBasename = toSafeAssetName(rawBgName);
+
+    if (!config.style.bgImage.startsWith("http") && rawBgName && !bgImageBasename) {
+      throw new Error("Ungültiger Hintergrund-Dateiname.");
     }
 
-    renderConfig.audioUrl = `/${audioFilename}`;
+    if (bgImageBasename && !config.style.bgImage.startsWith("http")) {
+      const bgDest = path.join(bundleAssetDir, bgImageBasename);
+      const tmpBgSrc = path.join(tmpDir, bgImageBasename);
+      try {
+        await stat(tmpBgSrc);
+        log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
+        await resizeBgIfNeeded(tmpBgSrc, bgDest, renderWidth, renderHeight);
+        bgImageForRender = `/${assetDirName}/${bgImageBasename}`;
+      } catch {
+        const publicBgSrc = path.join(publicDir, bgImageBasename);
+        try {
+          await copyFile(publicBgSrc, bgDest);
+          bgImageForRender = `/${assetDirName}/${bgImageBasename}`;
+          log("Hintergrundbild in den Render-Asset-Ordner kopiert");
+        } catch {
+          log(`Warnung: Hintergrundbild nicht gefunden: ${bgImageBasename}`);
+          bgImageForRender = `/${bgImageBasename}`;
+        }
+      }
+    }
+
+    renderConfig = {
+      ...config,
+      audioUrl: audioAssetPath,
+      style: { ...config.style, bgImage: bgImageForRender },
+      width: renderWidth,
+      height: renderHeight,
+      fps: renderFps,
+      durationInFrames: renderFrameCount,
+    };
 
     const inputProps = renderConfig as unknown as Record<string, unknown>;
     const browserExecutable = process.env.CHROME_EXECUTABLE ?? null;
@@ -224,12 +237,12 @@ export async function renderVideo(
     log(`Composition: ${composition.width}x${composition.height}, ${composition.durationInFrames} Frames`);
 
     const cpus = os.cpus().length;
-    // Thread model: 720p ~250MB/tab, 1080p ~500MB/tab.
-    // M4 Pro: 8 performance + 4 efficiency cores = 12 total, 24GB unified memory.
-    // Draft: saturate all cores. Full: leave 2 for system/Next.js server.
-    const concurrency = isDraft
-      ? cpus
-      : Math.max(2, cpus - 2);
+    const totalMemMb = os.totalmem() / 1024 / 1024;
+    const cpuCap = isDraft ? cpus : Math.max(2, cpus - 2);
+    const hardCap = isDraft ? 10 : 8;
+    const memPerWorkerMb = isDraft ? 300 : 550;
+    const memoryCap = Math.max(2, Math.floor((totalMemMb * 0.6) / memPerWorkerMb));
+    const concurrency = Math.max(2, Math.min(cpuCap, hardCap, memoryCap));
 
     log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
     log(`Codec: H.264, Bitrate: ${isDraft ? "4M" : "8M"}, Preset: ${isDraft ? "ultrafast" : "veryfast"}, HW-Accel: if-possible`);
@@ -346,6 +359,8 @@ export async function renderVideo(
 
     return outputPath;
   } finally {
-    await Promise.all(tmpFilesToClean.map((f) => unlink(f).catch(() => {})));
+    if (bundleAssetDir) {
+      await rm(bundleAssetDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 }

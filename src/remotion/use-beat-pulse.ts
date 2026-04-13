@@ -17,6 +17,8 @@ const INTENSITY_MULTIPLIER: Record<EffectIntensity, number> = {
   strong: 2,
 };
 
+const EMPTY_FREQUENCY: number[] = Array.from({ length: 64 }, () => 0);
+
 export function useBeatPulse(
   audioUrl: string,
   intensity: EffectIntensity,
@@ -26,10 +28,8 @@ export function useBeatPulse(
   const { fps } = useVideoConfig();
   const audioData = useAudioData(audioUrl);
 
-  const emptyFrequency = new Array(64).fill(0) as number[];
-
   if (!enabled || intensity === "off" || !audioData) {
-    return { scale: 1, glowOpacity: 0, bgBrightness: 1, bgScale: 1, bassEnergy: 0, frequencyData: emptyFrequency };
+    return { scale: 1, glowOpacity: 0, bgBrightness: 1, bgScale: 1, bassEnergy: 0, frequencyData: EMPTY_FREQUENCY };
   }
 
   const visualization = visualizeAudio({

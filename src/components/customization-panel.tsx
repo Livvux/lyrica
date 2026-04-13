@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
+import Image from "next/image";
 import { COLOR_PRESETS, STYLE_PRESETS, DEFAULT_WAVE_CONFIG } from "@/types/lyrics";
 import type { StyleConfig, EffectIntensity, AnimationVariant, VisualizerMode, PostEffect, WaveConfig } from "@/types/lyrics";
 
@@ -531,9 +532,12 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
               <div className="flex items-center gap-4 rounded-md bg-white/5 p-3">
                 <div className="flex h-16 w-16 items-center justify-center rounded bg-white/10 overflow-hidden">
                   {style.customLogo ? (
-                    <img
+                    <Image
                       src={style.customLogo}
                       alt="Logo-Vorschau"
+                      width={64}
+                      height={64}
+                      unoptimized
                       className="h-full w-full object-contain"
                     />
                   ) : (

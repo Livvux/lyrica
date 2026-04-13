@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import dynamic from "next/dynamic";
 import type { VideoConfig } from "@/types/lyrics";
 
@@ -17,7 +18,7 @@ interface PreviewPlayerProps {
   config: VideoConfig;
 }
 
-export function PreviewPlayer({ config }: PreviewPlayerProps) {
+function PreviewPlayerComponent({ config }: PreviewPlayerProps) {
   return (
     <div className="w-full overflow-hidden rounded-2xl border border-white/10">
       <div className="relative w-full" style={{ aspectRatio: "16/9" }}>
@@ -36,3 +37,8 @@ export function PreviewPlayer({ config }: PreviewPlayerProps) {
     </div>
   );
 }
+
+export const PreviewPlayer = memo(
+  PreviewPlayerComponent,
+  (prevProps, nextProps) => prevProps.config === nextProps.config
+);

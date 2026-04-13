@@ -3,21 +3,30 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/get-client-ip";
+import { startServerPerf } from "@/lib/perf";
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function POST(request: Request) {
-  const limited = rateLimit("upload-bg", { windowMs: 60_000, max: 10 });
-  if (limited) return limited;
+  const perf = startServerPerf("api.upload-bg");
+  const clientIp = getClientIp(request);
+  const limited = rateLimit("upload-bg", { windowMs: 60_000, max: 10, clientKey: clientIp });
+  if (limited) {
+    perf({ status: 429, clientIp });
+    return limited;
+  }
   try {
     const formData = await request.formData();
     const file = formData.get("image") as File | null;
 
     if (!file) {
+      perf({ status: 400, reason: "missing-file", clientIp });
       return NextResponse.json({ error: "Kein Bild" }, { status: 400 });
     }
 
     if (file.size > 50 * 1024 * 1024) {
+      perf({ status: 400, reason: "file-too-large", clientIp });
       return NextResponse.json(
         { error: "Datei zu groß. Maximal 50 MB für Videos erlaubt." },
         { status: 400 }
@@ -27,6 +36,7 @@ export async function POST(request: Request) {
     const isImage = file.type.startsWith("image/");
     const isVideo = file.type.startsWith("video/");
     if (!isImage && !isVideo) {
+      perf({ status: 400, reason: "invalid-type", clientIp, fileType: file.type });
       return NextResponse.json(
         { error: "Nur Bild- oder Videodateien erlaubt." },
         { status: 400 }
@@ -46,8 +56,15 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(filePath, buffer);
 
+    perf({
+      status: 200,
+      clientIp,
+      fileType: file.type || "unknown",
+      fileSizeMb: (file.size / (1024 * 1024)).toFixed(1),
+    });
     return NextResponse.json({ filename });
   } catch {
+    perf({ status: 500, clientIp });
     return NextResponse.json({ error: "Upload fehlgeschlagen" }, { status: 500 });
   }
 }

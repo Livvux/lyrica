@@ -6,6 +6,8 @@ import * as z from "zod";
 import { renderVideo } from "@/lib/render-video";
 import { cleanupTmpFiles } from "@/lib/cleanup-tmp";
 import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/get-client-ip";
+import { startServerPerf } from "@/lib/perf";
 import type { VideoConfig } from "@/types/lyrics";
 
 const MAX_DURATION_FRAMES = 30 * 60 * 15; // 15 Minuten @ 30fps
@@ -65,8 +67,13 @@ const VideoConfigSchema = z.object({
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function POST(request: Request) {
-  const limited = rateLimit("render", { windowMs: 60_000, max: 3 });
-  if (limited) return limited;
+  const parsePerf = startServerPerf("api.render.parse");
+  const clientIp = getClientIp(request);
+  const limited = rateLimit("render", { windowMs: 60_000, max: 3, clientKey: clientIp });
+  if (limited) {
+    parsePerf({ status: 429, clientIp });
+    return limited;
+  }
 
   // Clean up old tmp files (non-blocking)
   cleanupTmpFiles();
@@ -75,11 +82,13 @@ export async function POST(request: Request) {
   try {
     raw = await request.json();
   } catch {
+    parsePerf({ status: 400, reason: "invalid-json", clientIp });
     return NextResponse.json({ error: "Ungültiges JSON." }, { status: 400 });
   }
 
   const parsed = VideoConfigSchema.safeParse(raw);
   if (!parsed.success) {
+    parsePerf({ status: 400, reason: "invalid-config", clientIp });
     return NextResponse.json(
       { error: "Ungültige Video-Konfiguration.", details: parsed.error.issues },
       { status: 400 }
@@ -90,6 +99,17 @@ export async function POST(request: Request) {
   await mkdir(TMP_DIR, { recursive: true });
   const outputFilename = `${randomUUID()}.mp4`;
   const outputPath = path.join(TMP_DIR, outputFilename);
+  parsePerf({
+    status: 200,
+    clientIp,
+    quality: config.renderQuality ?? "full",
+    durationFrames: config.durationInFrames,
+  });
+  const renderPerf = startServerPerf("api.render.stream", {
+    clientIp,
+    quality: config.renderQuality ?? "full",
+    durationFrames: config.durationInFrames,
+  });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -127,11 +147,13 @@ export async function POST(request: Request) {
         });
 
         send({ phase: "done", filename: outputFilename });
+        renderPerf({ status: 200 });
       } catch (e) {
         console.error("Render error:", e);
         const errorMsg = e instanceof Error ? e.message : "Unbekannter Fehler";
-        send({ phase: "log", message: `FEHLER: ${errorMsg}` });
+        send({ phase: "log", message: "FEHLER: Render fehlgeschlagen (Details im Server-Log)." });
         send({ phase: "error", error: "Fehler beim Rendern des Videos." });
+        renderPerf({ status: 500, error: errorMsg });
       } finally {
         controller.close();
       }

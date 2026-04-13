@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
 
 // Mulberry32 — produces well-distributed floats in [0, 1)
@@ -12,6 +13,18 @@ const PARTICLE_COUNT = 80;
 const GRID_COLS = 10;
 const GRID_ROWS = 8;
 
+interface ParticleSeed {
+  baseX: number;
+  baseY: number;
+  size: number;
+  driftSpeed: number;
+  layer: number;
+  swayAmount: number;
+  swaySpeed: number;
+  phaseOffset: number;
+  twinkleSpeed: number;
+}
+
 export const BeatParticles: React.FC<{ bassEnergy: number; isDraft?: boolean }> = ({
   bassEnergy,
   isDraft,
@@ -19,53 +32,55 @@ export const BeatParticles: React.FC<{ bassEnergy: number; isDraft?: boolean }> 
   const frame = useCurrentFrame();
   const { height, fps } = useVideoConfig();
   const time = frame / fps;
+  const count = isDraft ? 30 : PARTICLE_COUNT;
+  const particles = useMemo<ParticleSeed[]>(() => {
+    return Array.from({ length: count }, (_, i) => {
+      const r = (s: number) => seededRandom(i * 7 + s);
+      const col = i % GRID_COLS;
+      const row = Math.floor(i / GRID_COLS) % GRID_ROWS;
+      const cellW = 100 / GRID_COLS;
+      const cellH = 100 / GRID_ROWS;
+      return {
+        baseX: col * cellW + r(0) * cellW,
+        baseY: row * cellH + r(8) * cellH,
+        size: 1 + r(1) * 2.5,
+        driftSpeed: 0.15 + r(2) * 0.4,
+        layer: r(3),
+        swayAmount: 8 + r(4) * 20,
+        swaySpeed: 0.3 + r(5) * 0.6,
+        phaseOffset: r(6) * Math.PI * 2,
+        twinkleSpeed: 1.5 + r(7) * 3,
+      };
+    });
+  }, [count]);
 
   if (bassEnergy <= 0) return null;
 
-  const count = isDraft ? 30 : PARTICLE_COUNT;
-
   return (
     <AbsoluteFill style={{ pointerEvents: "none" }}>
-      {Array.from({ length: count }, (_, i) => {
-        const r = (s: number) => seededRandom(i * 7 + s);
-
-        // Distribute across grid cells with jitter for even coverage
-        const col = i % GRID_COLS;
-        const row = Math.floor(i / GRID_COLS) % GRID_ROWS;
-        const cellW = 100 / GRID_COLS;
-        const cellH = 100 / GRID_ROWS;
-        const baseX = col * cellW + r(0) * cellW;
-        const baseY = row * cellH + r(8) * cellH;
-        const size = 1 + r(1) * 2.5; // 1-3.5px — small dots
-        const driftSpeed = 0.15 + r(2) * 0.4; // slow upward drift
-        const layer = r(3); // 0-1 depth layer for parallax
-        const swayAmount = 8 + r(4) * 20; // horizontal sway amplitude
-        const swaySpeed = 0.3 + r(5) * 0.6; // sway frequency
-        const phaseOffset = r(6) * Math.PI * 2; // desync particles
-        const twinkleSpeed = 1.5 + r(7) * 3; // twinkle frequency
-
+      {particles.map((seed, i) => {
         // Per-frame position — stagger start using grid row offset
         const cycleHeight = height + 40;
-        const yOffset = baseY / 100;
-        const yProgress = ((time * driftSpeed * 60 + yOffset * cycleHeight) % cycleHeight) / cycleHeight;
+        const yOffset = seed.baseY / 100;
+        const yProgress = ((time * seed.driftSpeed * 60 + yOffset * cycleHeight) % cycleHeight) / cycleHeight;
         const y = height * (1 - yProgress) - 20;
 
         // Horizontal sway — sin wave with per-particle phase
-        const sway = Math.sin(time * swaySpeed + phaseOffset) * swayAmount;
-        const x = baseX + sway / 10; // keep sway subtle in %
+        const sway = Math.sin(time * seed.swaySpeed + seed.phaseOffset) * seed.swayAmount;
+        const x = seed.baseX + sway / 10; // keep sway subtle in %
 
         // Twinkle — oscillating opacity
         const twinkle =
-          0.3 + 0.7 * Math.abs(Math.sin(time * twinkleSpeed + phaseOffset));
+          0.3 + 0.7 * Math.abs(Math.sin(time * seed.twinkleSpeed + seed.phaseOffset));
 
         // Bass reactivity — deeper layers react more
-        const bassBoost = 1 + bassEnergy * (0.5 + layer * 1.5);
-        const baseOpacity = (0.15 + layer * 0.25) * twinkle;
+        const bassBoost = 1 + bassEnergy * (0.5 + seed.layer * 1.5);
+        const baseOpacity = (0.15 + seed.layer * 0.25) * twinkle;
         const opacity = Math.min(baseOpacity * bassBoost, 1);
         const scale = bassBoost;
 
         // Parallax — far particles are dimmer and slower (already via layer)
-        const finalSize = size * (0.6 + layer * 0.4);
+        const finalSize = seed.size * (0.6 + seed.layer * 0.4);
 
         return (
           <div

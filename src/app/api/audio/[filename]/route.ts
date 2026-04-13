@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { readFile, stat } from "fs/promises";
+import { stat } from "fs/promises";
+import { createReadStream } from "fs";
 import path from "path";
+import { Readable } from "stream";
 import { sanitizeFilename } from "@/lib/sanitize-filename";
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
@@ -11,12 +13,15 @@ const MIME_TYPES: Record<string, string> = {
   ".m4a": "audio/mp4",
   ".webm": "audio/webm",
   ".mp4": "audio/mp4",
+  ".ogg": "audio/ogg",
+  ".flac": "audio/flac",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".png": "image/png",
   ".webp": "image/webp",
   ".gif": "image/gif",
   ".avif": "image/avif",
+  ".svg": "image/svg+xml",
 };
 
 export async function GET(
@@ -56,10 +61,13 @@ export async function GET(
 
       const clampedEnd = Math.min(end, totalSize - 1);
       const chunkSize = clampedEnd - start + 1;
-      const buffer = await readFile(filePath);
-      const chunk = buffer.subarray(start, clampedEnd + 1);
+      const nodeStream = createReadStream(filePath, {
+        start,
+        end: clampedEnd,
+      });
+      const webStream = Readable.toWeb(nodeStream) as ReadableStream;
 
-      return new NextResponse(chunk, {
+      return new NextResponse(webStream, {
         status: 206,
         headers: {
           "Content-Type": contentType,
@@ -71,8 +79,9 @@ export async function GET(
       });
     }
 
-    const buffer = await readFile(filePath);
-    return new NextResponse(buffer, {
+    const nodeStream = createReadStream(filePath);
+    const webStream = Readable.toWeb(nodeStream) as ReadableStream;
+    return new NextResponse(webStream, {
       headers: {
         "Content-Type": contentType,
         "Content-Length": String(totalSize),

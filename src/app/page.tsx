@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo, useDeferredValue, useRef } from "react";
 import { UploadForm } from "@/components/upload-form";
 import { PreviewPlayer } from "@/components/preview-player";
 import { LyricsEditor } from "@/components/lyrics-editor";
@@ -31,6 +31,7 @@ export default function Home() {
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [pendingLines, setPendingLines] = useState<LyricLine[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const previewUpdateMark = useRef(0);
 
   // Restore from localStorage on mount
   useEffect(() => {
@@ -38,7 +39,7 @@ export default function Home() {
     if (saved) {
       if (saved.audioUrl) setAudioUrl(saved.audioUrl);
       if (saved.durationSec) setDurationSec(saved.durationSec);
-      if (saved.style) setStyle(saved.style);
+      if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style, waveConfig: { ...DEFAULT_STYLE.waveConfig, ...(saved.style.waveConfig ?? {}) } });
       if (saved.lyricsActive) setLyricsActive(saved.lyricsActive);
       if (saved.lines?.length) setLines(saved.lines);
     }
@@ -48,7 +49,10 @@ export default function Home() {
   // Auto-save to localStorage on every change
   useEffect(() => {
     if (!hydrated) return;
-    savePersistence({ lines, audioUrl, durationSec, style, lyricsActive });
+    const timer = window.setTimeout(() => {
+      savePersistence({ lines, audioUrl, durationSec, style, lyricsActive });
+    }, 300);
+    return () => window.clearTimeout(timer);
   }, [lines, audioUrl, durationSec, style, lyricsActive, hydrated]);
 
   // Undo/Redo keyboard shortcuts
@@ -185,18 +189,34 @@ export default function Home() {
     setPendingLines([]);
   }
 
-  const config: VideoConfig | null =
-    audioUrl && durationSec > 0
-      ? {
-          lines: lyricsActive ? lines : [],
-          audioUrl,
-          style,
-          durationInFrames: getDurationInFrames(durationSec),
-          fps: 30,
-          width: 1920,
-          height: 1080,
-        }
-      : null;
+  const config = useMemo<VideoConfig | null>(() => {
+    if (!audioUrl || durationSec <= 0) return null;
+    return {
+      lines: lyricsActive ? lines : [],
+      audioUrl,
+      style,
+      durationInFrames: getDurationInFrames(durationSec),
+      fps: 30,
+      width: 1920,
+      height: 1080,
+    };
+  }, [audioUrl, durationSec, style, lyricsActive, lines]);
+
+  const previewConfig = useDeferredValue(config);
+
+  useEffect(() => {
+    if (!config) return;
+    previewUpdateMark.current = performance.now();
+  }, [config]);
+
+  useEffect(() => {
+    if (!previewConfig || process.env.NODE_ENV !== "development") return;
+    if (previewUpdateMark.current === 0) return;
+    const lagMs = Math.round(performance.now() - previewUpdateMark.current);
+    if (lagMs >= 120) {
+      console.debug(`[perf] preview update lag ${lagMs}ms`);
+    }
+  }, [previewConfig]);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-4 py-16">
@@ -212,7 +232,7 @@ export default function Home() {
       {config && (
         <>
           <ErrorBoundary>
-            <PreviewPlayer config={config} />
+            {previewConfig && <PreviewPlayer config={previewConfig} />}
           </ErrorBoundary>
           <CustomizationPanel
             style={style}
