@@ -179,6 +179,14 @@ export interface SongMatch {
   album?: string;
 }
 
+export interface MixTrack {
+  startSec: number;
+  endSec: number;
+  artist: string;
+  title: string;
+  recordingId?: string;
+}
+
 export interface ReferenceLyricLine {
   text: string;
   startSec?: number;
