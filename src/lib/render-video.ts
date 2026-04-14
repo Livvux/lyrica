@@ -14,6 +14,20 @@ import { collectMetrics, generateHints, type RenderSummary, type SystemMetrics }
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Kill orphaned headless browser workers from prior renders that may have
+ * leaked when PM2 restarted or a request was aborted. These hold ~200 MB-2 GB
+ * each and starve subsequent renders of RAM.
+ */
+async function killOrphanedRenderBrowsers(): Promise<void> {
+  if (process.platform !== "darwin" && process.platform !== "linux") return;
+  try {
+    await execFileAsync("pkill", ["-f", "puppeteer_dev_chrome_profile"]);
+  } catch {
+    // pkill exits non-zero when nothing matched — that's the normal case
+  }
+}
+
 export type RenderMetrics = {
   fps: number;
   framesRendered: number;
@@ -168,6 +182,8 @@ export async function renderVideo(
   let renderConfig: VideoConfig;
 
   try {
+    await killOrphanedRenderBrowsers();
+
     log("Remotion-Bundle wird geladen…");
     const bundleStart = Date.now();
     const bundleLocation = await getOrCreateBundle(onProgress);
@@ -239,8 +255,11 @@ export async function renderVideo(
     const cpus = os.cpus().length;
     const totalMemMb = os.totalmem() / 1024 / 1024;
     const cpuCap = isDraft ? cpus : Math.max(2, cpus - 2);
-    const hardCap = isDraft ? 10 : 8;
-    const memPerWorkerMb = isDraft ? 800 : 2000; // realistic Chrome estimates
+    const hardCap = isDraft ? 10 : 6;
+    // Full 1080p Chrome workers in practice peak around 2.8 GB each under
+    // Remotion; the previous 2 GB estimate yielded concurrency=7 on the 24 GB
+    // M4 Pro and the render-metrics hint consistently flagged "RAM 99%".
+    const memPerWorkerMb = isDraft ? 800 : 2800;
     const memoryCap = Math.max(2, Math.floor((totalMemMb * 0.6) / memPerWorkerMb));
     const concurrency = Math.max(2, Math.min(cpuCap, hardCap, memoryCap));
 
@@ -284,8 +303,9 @@ export async function renderVideo(
       // Draft: render every 2nd frame (duplicates in between) → ~2x faster
       everyNthFrame: isDraft ? 2 : 1,
       disallowParallelEncoding: false,
-      encodingBufferSize: isDraft ? "5M" : "10M",
-      encodingMaxRate: isDraft ? "6M" : "12M",
+      // encodingBufferSize/encodingMaxRate intentionally omitted: they force
+      // x264 software encoding and disable VideoToolbox HW acceleration on
+      // Apple Silicon, which costs us ~5x render speed on the M4 Pro.
       chromiumOptions: {
         gl: "angle",
       },
@@ -306,18 +326,26 @@ export async function renderVideo(
         // Send metrics every 2 seconds
         if (now - lastMetricsTime >= 2000) {
           lastMetricsTime = now;
-          collectMetrics().then((cpu) => {
-            if (cpu.cpuPercent > peakCpuPercent) peakCpuPercent = cpu.cpuPercent;
-            if (cpu.memUsedMb > peakMemMb) peakMemMb = cpu.memUsedMb;
-            onMetrics?.({
-              fps: Math.round(fps * 10) / 10,
-              framesRendered,
-              totalFrames: renderFrameCount,
-              elapsedSec: Math.round(elapsed),
-              etaSec: Math.round(eta),
-              cpu,
+          collectMetrics()
+            .then((cpu) => {
+              if (cpu.cpuPercent > peakCpuPercent) peakCpuPercent = cpu.cpuPercent;
+              if (cpu.memUsedMb > peakMemMb) peakMemMb = cpu.memUsedMb;
+              try {
+                onMetrics?.({
+                  fps: Math.round(fps * 10) / 10,
+                  framesRendered,
+                  totalFrames: renderFrameCount,
+                  elapsedSec: Math.round(elapsed),
+                  etaSec: Math.round(eta),
+                  cpu,
+                });
+              } catch {
+                // Stream may be closed (client disconnected) — swallow
+              }
+            })
+            .catch(() => {
+              // collectMetrics may fail under load — never crash the render
             });
-          });
         }
       },
     });
