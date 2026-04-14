@@ -255,11 +255,12 @@ export async function renderVideo(
     const cpus = os.cpus().length;
     const totalMemMb = os.totalmem() / 1024 / 1024;
     const cpuCap = isDraft ? cpus : Math.max(2, cpus - 2);
-    const hardCap = isDraft ? 10 : 6;
-    // Full 1080p Chrome workers in practice peak around 2.8 GB each under
-    // Remotion; the previous 2 GB estimate yielded concurrency=7 on the 24 GB
-    // M4 Pro and the render-metrics hint consistently flagged "RAM 99%".
-    const memPerWorkerMb = isDraft ? 800 : 2800;
+    // Full-mode was bottlenecked by frame rendering (CPU only 63% utilized
+    // at c=7) while x264 software encoding saturated 1-2 cores. With
+    // VideoToolbox HW acceleration now enabled, the encoder drops to
+    // near-zero CPU and frees headroom for more parallel Chrome workers.
+    const hardCap = isDraft ? 10 : 7;
+    const memPerWorkerMb = isDraft ? 800 : 2100;
     const memoryCap = Math.max(2, Math.floor((totalMemMb * 0.6) / memPerWorkerMb));
     const concurrency = Math.max(2, Math.min(cpuCap, hardCap, memoryCap));
 
@@ -298,7 +299,7 @@ export async function renderVideo(
       timeoutInMilliseconds: 300_000,
       videoBitrate: isDraft ? "4M" : "8M",
       x264Preset: isDraft ? "ultrafast" : "veryfast",
-      jpegQuality: isDraft ? 50 : 80,
+      jpegQuality: isDraft ? 50 : 72,
       imageFormat: "jpeg",
       // Draft: render every 2nd frame (duplicates in between) → ~2x faster
       everyNthFrame: isDraft ? 2 : 1,
