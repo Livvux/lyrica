@@ -115,8 +115,13 @@ export async function POST(request: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       let closed = false;
+
       const send = (data: Record<string, unknown>) => {
-        if (closed) return;
+        // Double gate: our own flag plus the request signal. Next.js flips
+        // the underlying controller to a closed state the same tick the
+        // abort fires, so checking `request.signal.aborted` prevents a race
+        // where our flag hasn't been set yet by the abort listener below.
+        if (closed || request.signal.aborted) return;
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         } catch {
@@ -124,10 +129,10 @@ export async function POST(request: Request) {
         }
       };
 
-      // Detect client disconnect
-      request.signal.addEventListener("abort", () => {
+      const onAbort = () => {
         closed = true;
-      });
+      };
+      request.signal.addEventListener("abort", onAbort, { once: true });
 
       try {
         await renderVideo(config, outputPath, {
@@ -149,13 +154,25 @@ export async function POST(request: Request) {
         send({ phase: "done", filename: outputFilename });
         renderPerf({ status: 200 });
       } catch (e) {
-        console.error("Render error:", e);
-        const errorMsg = e instanceof Error ? e.message : "Unbekannter Fehler";
-        send({ phase: "log", message: "FEHLER: Render fehlgeschlagen (Details im Server-Log)." });
-        send({ phase: "error", error: "Fehler beim Rendern des Videos." });
-        renderPerf({ status: 500, error: errorMsg });
+        if (request.signal.aborted) {
+          renderPerf({ status: 499, reason: "client-aborted" });
+        } else {
+          console.error("Render error:", e);
+          const errorMsg = e instanceof Error ? e.message : "Unbekannter Fehler";
+          send({ phase: "log", message: "FEHLER: Render fehlgeschlagen (Details im Server-Log)." });
+          send({ phase: "error", error: "Fehler beim Rendern des Videos." });
+          renderPerf({ status: 500, error: errorMsg });
+        }
       } finally {
-        try { controller.close(); } catch { /* already closed on client disconnect */ }
+        request.signal.removeEventListener("abort", onAbort);
+        if (!closed) {
+          closed = true;
+          try {
+            controller.close();
+          } catch {
+            // Already closed by the client disconnect path — safe to ignore.
+          }
+        }
       }
     },
   });
