@@ -3,11 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=${NODE_MAX_MEMORY:-8192}\" next dev --turbopack",
+    "build": "bash scripts/check-no-dev-server.sh && next build",
     "start": "next start",
     "lint": "eslint .",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "guard:no-dev-server": "bash scripts/check-no-dev-server.sh",
+    "dev:kill": "bash scripts/kill-next-dev.sh",
+    "dev:reset": "bash scripts/dev-reset.sh",
+    "dev:next:webpack": "NODE_OPTIONS=\"--max-old-space-size=${NODE_MAX_MEMORY:-8192}\" next dev --webpack"
   },
   "dependencies": {
     "@remotion/bundler": "^4.0.436",

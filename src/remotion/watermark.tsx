@@ -11,11 +11,7 @@ export const Watermark: React.FC<WatermarkProps> = ({ show, customLogo, logoScal
 
   const baseHeight = 50;
   const height = baseHeight * (logoScale / 100);
-  const logoSrc = customLogo
-    ? customLogo.startsWith("/")
-      ? staticFile(customLogo.split("/").pop()!)
-      : staticFile(customLogo)
-    : staticFile("logo.svg");
+  const logoSrc = customLogo ?? staticFile("logo.svg");
 
   return (
     <AbsoluteFill

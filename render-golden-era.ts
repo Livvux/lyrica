@@ -151,7 +151,7 @@ async function main() {
     fps: 30,
     width: 1920,
     height: 1080,
-    renderQuality: "full",
+    renderQuality: "balanced",
     style: {
       fontSize: 76,
       fontFamily: "Inter",

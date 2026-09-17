@@ -127,12 +127,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   const logoW = BASE_LOGO_WIDTH * ls;
   const logoH = BASE_LOGO_HEIGHT * ls;
 
-  // Resolve logo URL for Remotion staticFile
-  const resolvedLogo = customLogo
-    ? customLogo.startsWith("/api/audio/")
-      ? staticFile(customLogo.replace("/api/audio/", ""))
-      : staticFile(customLogo)
-    : staticFile("logo.svg");
+  const resolvedLogo = customLogo ?? staticFile("logo.svg");
 
   // Shared center ball + logo renderer
   const centerBall = (

@@ -158,7 +158,7 @@ export const STYLE_PRESETS: StylePreset[] = [
   },
 ];
 
-export type RenderQuality = "draft" | "full";
+export type RenderQuality = "fast" | "balanced" | "quality";
 
 export interface VideoConfig {
   lines: LyricLine[];

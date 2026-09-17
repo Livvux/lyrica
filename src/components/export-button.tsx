@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { VideoConfig } from "@/types/lyrics";
+import type { VideoConfig, RenderQuality } from "@/types/lyrics";
+
+const PROFILES: { key: RenderQuality; label: string; desc: string }[] = [
+  { key: "fast", label: "Schnell", desc: "720p, 24fps, ~2× schneller" },
+  { key: "balanced", label: "Ausgewogen", desc: "1080p, 30fps, gute Qualität" },
+  { key: "quality", label: "Qualität", desc: "1080p, 30fps, hohe Bitrate" },
+];
 
 interface ExportButtonProps {
   config: VideoConfig;
@@ -68,6 +74,7 @@ function MeterBar({ value, max, color, label }: { value: number; max: number; co
 }
 
 export function ExportButton({ config }: ExportButtonProps) {
+  const [profile, setProfile] = useState<RenderQuality>("balanced");
   const [state, setState] = useState<RenderState>({ status: "idle" });
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
@@ -90,12 +97,13 @@ export function ExportButton({ config }: ExportButtonProps) {
     setShowLogs(false);
     setMetrics(null);
     setSummary(null);
-    addLog("Export gestartet: 1080p");
+    const profileLabel = PROFILES.find((p) => p.key === profile)?.label ?? profile;
+    addLog(`Export gestartet: ${profileLabel}`);
     setState({ status: "bundling", progress: 0 });
 
     const exportConfig: VideoConfig = {
       ...config,
-      renderQuality: "full",
+      renderQuality: profile,
     };
 
     const controller = new AbortController();
@@ -270,12 +278,28 @@ export function ExportButton({ config }: ExportButtonProps) {
           )}
         </div>
       ) : (
-        <div className="flex gap-3">
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-1.5">
+            {PROFILES.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setProfile(p.key)}
+                className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition ${
+                  profile === p.key
+                    ? "bg-white text-black"
+                    : "bg-white/10 text-white/60 hover:bg-white/15 hover:text-white/80"
+                }`}
+              >
+                <div>{p.label}</div>
+                <div className={`text-[10px] ${profile === p.key ? "text-black/50" : "text-white/40"}`}>{p.desc}</div>
+              </button>
+            ))}
+          </div>
           <button
             onClick={handleExport}
             className="flex-1 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black transition hover:bg-white/90"
           >
-            Export (1080p)
+            Export ({PROFILES.find((p) => p.key === profile)?.label ?? profile})
           </button>
         </div>
       )}

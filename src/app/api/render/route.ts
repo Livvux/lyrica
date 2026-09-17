@@ -8,7 +8,12 @@ import { cleanupTmpFiles } from "@/lib/cleanup-tmp";
 import { rateLimit } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/get-client-ip";
 import { startServerPerf } from "@/lib/perf";
+import { installRenderSafetyNet } from "@/lib/render-safety-net";
 import type { VideoConfig } from "@/types/lyrics";
+
+export const runtime = "nodejs";
+
+installRenderSafetyNet();
 
 const MAX_DURATION_FRAMES = 30 * 60 * 120; // 120 Minuten @ 30fps
 
@@ -61,7 +66,7 @@ const VideoConfigSchema = z.object({
   fps: z.number().int().positive(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
-  renderQuality: z.enum(["draft", "full"]).optional(),
+  renderQuality: z.enum(["fast", "balanced", "quality"]).optional(),
 });
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
@@ -102,12 +107,12 @@ export async function POST(request: Request) {
   parsePerf({
     status: 200,
     clientIp,
-    quality: config.renderQuality ?? "full",
+    quality: config.renderQuality ?? "balanced",
     durationFrames: config.durationInFrames,
   });
   const renderPerf = startServerPerf("api.render.stream", {
     clientIp,
-    quality: config.renderQuality ?? "full",
+    quality: config.renderQuality ?? "balanced",
     durationFrames: config.durationInFrames,
   });
 

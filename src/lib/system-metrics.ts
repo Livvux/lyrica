@@ -1,5 +1,9 @@
 import os from "os";
 import { readFile } from "fs/promises";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 export interface SystemMetrics {
   cpuPercent: number;
@@ -60,6 +64,31 @@ async function getContainerMemory(): Promise<{ used: number; total: number } | n
   return null;
 }
 
+async function getDarwinMemory(): Promise<{ used: number; total: number } | null> {
+  if (process.platform !== "darwin") return null;
+
+  try {
+    const { stdout } = await execFileAsync("vm_stat");
+    const pageSizeMatch = stdout.match(/page size of (\d+) bytes/);
+    const pageSize = pageSizeMatch ? Number.parseInt(pageSizeMatch[1], 10) : 16384;
+
+    const readPages = (label: string): number => {
+      const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = stdout.match(new RegExp(`${escaped}:\\s+(\\d+)\\.`));
+      return match ? Number.parseInt(match[1], 10) : 0;
+    };
+
+    const activePages = readPages("Pages active");
+    const wiredPages = readPages("Pages wired down");
+    const compressorPages = readPages("Pages occupied by compressor");
+    const used = (activePages + wiredPages + compressorPages) * pageSize;
+
+    return { used, total: os.totalmem() };
+  } catch {
+    return null;
+  }
+}
+
 export async function collectMetrics(): Promise<SystemMetrics> {
   const cpuPercent = getCpuUsage();
 
@@ -72,6 +101,18 @@ export async function collectMetrics(): Promise<SystemMetrics> {
       memUsedMb,
       memTotalMb,
       memPercent: Math.round((container.used / container.total) * 100),
+    };
+  }
+
+  const darwin = await getDarwinMemory();
+  if (darwin) {
+    const memUsedMb = Math.round(darwin.used / 1024 / 1024);
+    const memTotalMb = Math.round(darwin.total / 1024 / 1024);
+    return {
+      cpuPercent,
+      memUsedMb,
+      memTotalMb,
+      memPercent: Math.round((darwin.used / darwin.total) * 100),
     };
   }
 

@@ -59,6 +59,44 @@ const webpackOverride = (currentConfig: WebpackConfiguration): WebpackConfigurat
   },
 });
 
+function resolveBrowserExecutable(log?: (msg: string) => void): string | undefined {
+  const configuredPath = process.env.CHROME_EXECUTABLE?.trim();
+
+  if (configuredPath) {
+    if (configuredPath.toLowerCase().includes("brave")) {
+      log?.("Warnung: CHROME_EXECUTABLE zeigt auf Brave und wird ignoriert (Performance-Grund).");
+    } else if (existsSync(configuredPath)) {
+      log?.(`Browser: Verwende CHROME_EXECUTABLE (${configuredPath})`);
+      return configuredPath;
+    } else {
+      log?.(`Warnung: CHROME_EXECUTABLE nicht gefunden: ${configuredPath}`);
+    }
+  }
+
+  const fallbackCandidates =
+    process.platform === "darwin"
+      ? [
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          "/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+          "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ]
+      : [
+          "/usr/bin/google-chrome",
+          "/usr/bin/google-chrome-stable",
+          "/usr/bin/chromium",
+          "/usr/bin/chromium-browser",
+        ];
+
+  const detected = fallbackCandidates.find((candidate) => existsSync(candidate));
+  if (detected) {
+    log?.(`Browser: Auto-detected ${detected}`);
+    return detected;
+  }
+
+  log?.("Browser: Kein lokaler Chrome/Chromium erkannt, Remotion-Fallback wird verwendet");
+  return undefined;
+}
+
 function toSafeAssetName(raw: string): string | null {
   const safe = sanitizeFilename(raw);
   if (!safe || safe === "." || safe === "..") return null;
@@ -109,8 +147,8 @@ export async function preBundleRemotionIfNeeded(): Promise<void> {
 }
 
 /**
- * Resize background image to target dimensions if it's significantly larger.
- * Prevents rendering a 4K image every frame when 1920x1080 or 1280x720 suffices.
+ * Normalize background image to exact render resolution once before rendering.
+ * This avoids expensive per-frame resizing during composition render.
  */
 async function resizeBgIfNeeded(
   srcPath: string,
@@ -118,14 +156,6 @@ async function resizeBgIfNeeded(
   targetWidth: number,
   targetHeight: number
 ): Promise<void> {
-  const fileStat = await stat(srcPath);
-
-  // Only resize if image is > 500KB (likely larger than target resolution)
-  if (fileStat.size <= 500 * 1024) {
-    await copyFile(srcPath, destPath);
-    return;
-  }
-
   // Resolve ffmpeg: prefer Homebrew arm64 path on macOS, fall back to PATH
   const ffmpegBin =
     process.platform === "darwin" && existsSync("/opt/homebrew/bin/ffmpeg")
@@ -153,6 +183,56 @@ export type RenderCallbacks = {
   signal?: AbortSignal;
 };
 
+export type RenderProfile = "fast" | "balanced" | "quality";
+
+interface ProfileSettings {
+  label: string;
+  width: number;
+  height: number;
+  fps: number;
+  videoBitrate: string;
+  jpegQuality: number;
+  everyNthFrame: number;
+  hardCap: number;
+  memPerWorkerMb: number;
+}
+
+const PROFILES: Record<RenderProfile, ProfileSettings> = {
+  fast: {
+    label: "Schnell",
+    width: 1280,
+    height: 720,
+    fps: 24,
+    videoBitrate: "5M",
+    jpegQuality: 60,
+    everyNthFrame: 2,
+    hardCap: 14,
+    memPerWorkerMb: 800,
+  },
+  balanced: {
+    label: "Ausgewogen",
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    videoBitrate: "10M",
+    jpegQuality: 80,
+    everyNthFrame: 1,
+    hardCap: 10,
+    memPerWorkerMb: 2000,
+  },
+  quality: {
+    label: "Qualität",
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    videoBitrate: "18M",
+    jpegQuality: 95,
+    everyNthFrame: 1,
+    hardCap: 8,
+    memPerWorkerMb: 3000,
+  },
+};
+
 export async function renderVideo(
   config: VideoConfig,
   outputPath: string,
@@ -164,15 +244,16 @@ export async function renderVideo(
   const tmpDir = path.join(process.cwd(), "tmp", "lyrica");
   let bundleAssetDir: string | null = null;
 
-  const isDraft = config.renderQuality === "draft";
-  const renderWidth = isDraft ? 1280 : 1920;
-  const renderHeight = isDraft ? 720 : 1080;
-  const renderFps = isDraft ? 24 : 30;
+  const profileKey: RenderProfile = config.renderQuality ?? "balanced";
+  const profile = PROFILES[profileKey];
+  const renderWidth = profile.width;
+  const renderHeight = profile.height;
+  const renderFps = profile.fps;
 
   const durationSec = config.durationInFrames / config.fps;
   const renderFrameCount = Math.ceil(durationSec * renderFps);
 
-  log(`Qualität: ${isDraft ? "Draft 720p" : "Full 1080p"}`);
+  log(`Profil: ${profile.label}`);
   log(`Auflösung: ${renderWidth}x${renderHeight} @ ${renderFps}fps`);
   log(`Dauer: ${durationSec.toFixed(1)}s → ${renderFrameCount} Frames`);
   log(`Lyrics: ${config.lines.length} Zeilen`);
@@ -189,7 +270,10 @@ export async function renderVideo(
     const bundleLocation = await getOrCreateBundle(onProgress);
     log(`Bundle bereit (${((Date.now() - bundleStart) / 1000).toFixed(1)}s)`);
 
-    const assetDirName = `.lyrica-assets/${randomUUID()}`;
+    // Assets must live under public/ — the render page resolves asset URLs
+    // relative to the bundle's public dir (/public/...). Dot-dirs at bundle
+    // root 404 and Remotion's <Img>/<Audio> retry forever => render hangs.
+    const assetDirName = `public/lyrica-assets/${randomUUID()}`;
     bundleAssetDir = path.join(bundleLocation, assetDirName);
     await mkdir(bundleAssetDir, { recursive: true });
 
@@ -220,9 +304,10 @@ export async function renderVideo(
       } catch {
         const publicBgSrc = path.join(publicDir, bgImageBasename);
         try {
-          await copyFile(publicBgSrc, bgDest);
+          log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
+          await resizeBgIfNeeded(publicBgSrc, bgDest, renderWidth, renderHeight);
           bgImageForRender = `/${assetDirName}/${bgImageBasename}`;
-          log("Hintergrundbild in den Render-Asset-Ordner kopiert");
+          log("Hintergrundbild in den Render-Asset-Ordner kopiert und skaliert");
         } catch {
           log(`Warnung: Hintergrundbild nicht gefunden: ${bgImageBasename}`);
           bgImageForRender = `/${bgImageBasename}`;
@@ -230,10 +315,28 @@ export async function renderVideo(
       }
     }
 
+    // Custom logo: lokal in den Bundle-Asset-Ordner kopieren
+    let logoForRender = config.style.customLogo;
+    if (logoForRender?.startsWith("/api/audio/")) {
+      const logoFilename = toSafeAssetName(logoForRender.replace("/api/audio/", ""));
+      if (logoFilename) {
+        const logoSrc = path.join(tmpDir, logoFilename);
+        try {
+          await stat(logoSrc);
+          const logoDest = path.join(bundleAssetDir, logoFilename);
+          await copyFile(logoSrc, logoDest);
+          logoForRender = `/${assetDirName}/${logoFilename}`;
+          log("Logo in den Render-Asset-Ordner kopiert");
+        } catch {
+          log(`Warnung: Logo-Datei nicht gefunden: ${logoFilename}`);
+        }
+      }
+    }
+
     renderConfig = {
       ...config,
       audioUrl: audioAssetPath,
-      style: { ...config.style, bgImage: bgImageForRender },
+      style: { ...config.style, bgImage: bgImageForRender, customLogo: logoForRender },
       width: renderWidth,
       height: renderHeight,
       fps: renderFps,
@@ -241,7 +344,7 @@ export async function renderVideo(
     };
 
     const inputProps = renderConfig as unknown as Record<string, unknown>;
-    const browserExecutable = process.env.CHROME_EXECUTABLE ?? null;
+    const browserExecutable = resolveBrowserExecutable(log);
 
     log("Composition wird ermittelt…");
     const composition = await selectComposition({
@@ -254,22 +357,23 @@ export async function renderVideo(
 
     const cpus = os.cpus().length;
     const totalMemMb = os.totalmem() / 1024 / 1024;
-    const cpuCap = isDraft ? cpus : Math.max(2, cpus - 2);
-    // Measured on a 24 GB M4 Pro with VideoToolbox HW encoding: a real
-    // Full-1080p render with c=7 hit 23 GB peak (3.3 GB per Chrome worker),
-    // forcing the macOS memory compressor active and stalling workers on
-    // page faults — CPU sat at only 33 % and the render dropped to 15.7 fps.
-    // Using a 0.7 budget (17 GB) with a realistic 3.3 GB per worker lands
-    // concurrency at 5, leaving ~7 GB headroom for the OS and encoder so
-    // per-worker speed is no longer capped by memory pressure.
-    const memBudgetFactor = isDraft ? 0.6 : 0.7;
-    const hardCap = isDraft ? 10 : 6;
-    const memPerWorkerMb = isDraft ? 800 : 3300;
-    const memoryCap = Math.max(2, Math.floor((totalMemMb * memBudgetFactor) / memPerWorkerMb));
-    const concurrency = Math.max(2, Math.min(cpuCap, hardCap, memoryCap));
+    const envConcurrency = Number.parseInt(
+      process.env.RENDER_CONCURRENCY ?? "",
+      10
+    );
+    const hasEnvConcurrency = Number.isInteger(envConcurrency) && envConcurrency >= 1;
+    const memBudgetFactor = profileKey === "fast" ? 0.6 : 0.78;
+    const memoryCap = Math.max(1, Math.floor((totalMemMb * memBudgetFactor) / profile.memPerWorkerMb));
+    const autoConcurrency = Math.max(1, Math.min(cpus, profile.hardCap, memoryCap));
+    const concurrency = hasEnvConcurrency ? envConcurrency : autoConcurrency;
 
     log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
-    log(`Codec: H.264, Bitrate: ${isDraft ? "4M" : "8M"}, Preset: ${isDraft ? "ultrafast" : "veryfast"}, HW-Accel: if-possible`);
+    if (hasEnvConcurrency) {
+      log(`Concurrency-Override aktiv via Env: ${envConcurrency}`);
+    } else {
+      log(`Auto-Tuning: RAM-Budget ${Math.round(totalMemMb * memBudgetFactor)}MB, ~${profile.memPerWorkerMb}MB/Worker`);
+    }
+    log(`Codec: H.264, Bitrate: ${profile.videoBitrate}, JPEG: ${profile.jpegQuality}, HW-Accel: if-possible`);
 
     const renderStart = Date.now();
     let lastLoggedPercent = 0;
@@ -301,12 +405,11 @@ export async function renderVideo(
       browserExecutable,
       hardwareAcceleration: "if-possible",
       timeoutInMilliseconds: 300_000,
-      videoBitrate: isDraft ? "4M" : "8M",
-      x264Preset: isDraft ? "ultrafast" : "veryfast",
-      jpegQuality: isDraft ? 50 : 72,
+      videoBitrate: profile.videoBitrate,
+      x264Preset: "ultrafast",
+      jpegQuality: profile.jpegQuality,
       imageFormat: "jpeg",
-      // Draft: render every 2nd frame (duplicates in between) → ~2x faster
-      everyNthFrame: isDraft ? 2 : 1,
+      everyNthFrame: profile.everyNthFrame,
       disallowParallelEncoding: false,
       // encodingBufferSize/encodingMaxRate intentionally omitted: they force
       // x264 software encoding and disable VideoToolbox HW acceleration on
@@ -379,7 +482,7 @@ export async function renderVideo(
       peakMemMb,
       memTotalMb: finalMetrics.memTotalMb,
       resolution: `${renderWidth}x${renderHeight}`,
-      quality: isDraft ? "Draft" : "Full",
+      quality: profile.label,
       hints: [],
     };
     summary.hints = generateHints(summary);

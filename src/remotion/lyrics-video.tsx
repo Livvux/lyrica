@@ -50,7 +50,7 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
   style,
   renderQuality,
 }) => {
-  const isDraft = renderQuality === "draft";
+  const reduceDetail = renderQuality === "fast";
   // Preview (client): audioUrl starts with "/" (e.g. "/api/audio/abc.mp3") -> use directly
   // Render (server): audioUrl is just filename (e.g. "abc.mp3") -> use staticFile (served from publicDir)
   const resolvedAudioUrl =
@@ -78,7 +78,7 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
   return (
     <AbsoluteFill style={{ transform: `translate(${shake.x}px, ${shake.y}px)` }}>
       <Background src={style.bgImage} brightness={beat.bgBrightness} scale={beat.bgScale} bgType={style.bgType} />
-      <BeatParticles bassEnergy={beat.bassEnergy} isDraft={isDraft} />
+      <BeatParticles bassEnergy={beat.bassEnergy} isDraft={reduceDetail} />
       <AudioVisualizer
         frequencyData={beat.frequencyData}
         bassEnergy={beat.bassEnergy}
@@ -86,7 +86,7 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
         monoColor={style.textColor}
         logoScale={style.logoScale}
         customLogo={style.customLogo}
-        isDraft={isDraft}
+        isDraft={reduceDetail}
         waveConfig={style.waveConfig}
       />
       {audioUrl && <Audio src={resolvedAudioUrl} />}
