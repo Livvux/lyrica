@@ -8,7 +8,11 @@ interface FilmGrainEffectProps {
 export const FilmGrainEffect: React.FC<FilmGrainEffectProps> = ({ intensity }) => {
   const frame = useCurrentFrame();
   const opacity = intensity === "strong" ? 0.18 : 0.09;
-  const filterId = `film-grain-${frame}`;
+  // Static id so React reuses the same <filter> node across frames — only
+  // the feTurbulence `seed` below needs to change per frame. A per-frame id
+  // forced Chromium to rebuild the whole full-screen turbulence filter graph
+  // every frame, which dominated render time whenever this effect was active.
+  const filterId = "film-grain-noise-filter";
 
   return (
     <AbsoluteFill style={{ pointerEvents: "none" }}>

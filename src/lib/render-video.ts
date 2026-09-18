@@ -207,7 +207,10 @@ const PROFILES: Record<RenderProfile, ProfileSettings> = {
     jpegQuality: 60,
     everyNthFrame: 2,
     hardCap: 14,
-    memPerWorkerMb: 800,
+    // Observed real usage under concurrency 12 is ~1.5GB/worker, not 800MB —
+    // the old budget under-estimated memory and pushed macOS into memory
+    // pressure, crashing Chrome renderer processes mid-render.
+    memPerWorkerMb: 1500,
   },
   balanced: {
     label: "Ausgewogen",
