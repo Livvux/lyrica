@@ -1,44 +1,29 @@
-import { NextResponse } from "next/server";
-import { stat, unlink } from "fs/promises";
-import { createReadStream } from "fs";
-import path from "path";
-import { Readable } from "stream";
-import { sanitizeFilename } from "@/lib/sanitize-filename";
+import path from "node:path";
+import { createMediaResponse } from "../../../../lib/media-response";
 
+export const runtime = "nodejs";
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ filename: string }> }
 ) {
-  const { filename: rawFilename } = await params;
-  const filename = sanitizeFilename(rawFilename);
-
+  const { filename } = await params;
   if (!filename.endsWith(".mp4")) {
-    return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid filename" },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
   }
 
-  const filePath = path.join(TMP_DIR, filename);
-
-  try {
-    const fileStat = await stat(filePath);
-
-    const nodeStream = createReadStream(filePath);
-    const webStream = Readable.toWeb(nodeStream) as ReadableStream;
-
-    // Clean up after stream is fully consumed
-    nodeStream.on("close", () => {
-      unlink(filePath).catch(() => {});
-    });
-
-    return new Response(webStream, {
-      headers: {
-        "Content-Type": "video/mp4",
-        "Content-Length": String(fileStat.size),
-        "Content-Disposition": `attachment; filename="lyrica-video.mp4"`,
-      },
-    });
-  } catch {
-    return NextResponse.json({ error: "Datei nicht gefunden" }, { status: 404 });
-  }
+  // Keep exports for retries/resume. Existing cleanupTmpFiles() reclaims old
+  // temporary files on subsequent upload/render requests (one-hour age limit).
+  return createMediaResponse(request, {
+    directory: TMP_DIR,
+    filename,
+    contentType: "video/mp4",
+    download: true,
+  });
 }
+
+export const HEAD = GET;
