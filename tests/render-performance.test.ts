@@ -50,7 +50,9 @@ test("explicit valid worker override is preserved, malformed overrides ignored",
 });
 
 test("presets activate audio-reactive visuals without replacing user media or lyrics", () => {
-  assert.equal(VISUALIZER_PRESETS.length, 6);
+  for (const name of ["Ocean", "Aurora", "Pulse", "Spectrum", "Prism", "Mono"]) {
+    assert.ok(VISUALIZER_PRESETS.some((preset) => preset.name === name));
+  }
   for (const { style } of VISUALIZER_PRESETS) {
     assert.ok(style.visualizerMode && style.visualizerMode !== "none");
     assert.equal(style.beatReactive, true);

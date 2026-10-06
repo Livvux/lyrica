@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "macos:build": "bash script/build_and_run.sh --build-only",
+    "macos:run": "bash script/build_and_run.sh",
     "dev": "NODE_OPTIONS=\"--max-old-space-size=${NODE_MAX_MEMORY:-8192}\" next dev --turbopack",
     "build": "bash scripts/check-no-dev-server.sh && next build",
     "start": "next start",

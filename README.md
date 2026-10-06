@@ -25,6 +25,12 @@ Available controls are defined in the customization panel, lyrics editor, and sh
 
 Quick start
 
+macOS desktop app
+
+Build a native macOS application with `pnpm macos:build`, then open
+`dist/Lyrica.app`. It includes the local runtime and media tools. See
+[macOS build and usage](docs/macos.md) for requirements, data storage and signing.
+
 Requirements
 
 Use Node.js 22 and pnpm 9 to match the included Dockerfile. You also need FFmpeg, including ffprobe, available on your PATH, and a Chrome/Chromium browser for server-side rendering.

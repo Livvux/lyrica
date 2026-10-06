@@ -112,6 +112,8 @@ async function getOrCreateBundle(
 
   bundlePromise = bundle({
     entryPoint,
+    // Desktop dependencies live in the signed, read-only app bundle.
+    enableCaching: !process.env.LYRICA_RESOURCES,
     onProgress: (p) => onProgress?.({ phase: "bundling", progress: p / 100 }),
     webpackOverride,
   }).finally(() => {
@@ -146,10 +148,10 @@ async function resizeBgIfNeeded(
   targetHeight: number
 ): Promise<void> {
   // Resolve ffmpeg: prefer Homebrew arm64 path on macOS, fall back to PATH
-  const ffmpegBin =
+  const ffmpegBin = process.env.FFMPEG_PATH || (
     process.platform === "darwin" && existsSync("/opt/homebrew/bin/ffmpeg")
       ? "/opt/homebrew/bin/ffmpeg"
-      : "ffmpeg";
+      : "ffmpeg");
 
   try {
     await execFileAsync(ffmpegBin, [
