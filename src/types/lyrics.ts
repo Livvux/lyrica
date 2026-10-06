@@ -111,6 +111,35 @@ export const VISUALIZER_PRESETS: StylePreset[] = [
   { name: "Mono", description: "Reduzierter weißer Spektrum-Ring", style: {
     visualizerMode: "mono", beatReactive: true, effectIntensity: "subtle", postEffect: "none", textColor: "#ffffff",
   } },
+  { name: "Inferno", description: "Lodernde Feuerwellen mit Kamera-Wackeln", style: {
+    visualizerMode: "waves", beatReactive: true, effectIntensity: "strong", postEffect: "camera-shake", textColor: "#fde68a",
+    waveConfig: { ...DEFAULT_WAVE_CONFIG, gain: 420, spread: 0.35, colors: ["#450a0a", "#b91c1c", "#f97316", "#facc15", "#fff7ed"] },
+  } },
+  { name: "Cyberpunk", description: "Neon-Ring in Pink und Cyan mit Glitch", style: {
+    visualizerMode: "wave", beatReactive: true, effectIntensity: "strong", postEffect: "glitch", textColor: "#f0abfc",
+    waveConfig: { ...DEFAULT_WAVE_CONFIG, gain: 340, colors: ["#0ea5e9", "#d946ef", "#f43f5e", "#22d3ee", "#fdf4ff"] },
+  } },
+  { name: "Toxic", description: "Giftgrüner Equalizer mit RGB-Versatz", style: {
+    visualizerMode: "spectrum", beatReactive: true, effectIntensity: "strong", postEffect: "chromatic-aberration", textColor: "#a3e635",
+  } },
+  { name: "Synthwave", description: "Retro-Sonnenuntergang auf VHS", style: {
+    visualizerMode: "waves", beatReactive: true, effectIntensity: "strong", postEffect: "vhs", textColor: "#f9a8d4",
+    waveConfig: { ...DEFAULT_WAVE_CONFIG, gain: 300, colors: ["#1e1b4b", "#7e22ce", "#db2777", "#fb923c", "#fde047"] },
+  } },
+  { name: "Bass Nuke", description: "Brutaler Bass-Ring, maximale Wucht", style: {
+    visualizerMode: "wave", beatReactive: true, effectIntensity: "strong", postEffect: "camera-shake", textColor: "#ffffff",
+    waveConfig: { ...DEFAULT_WAVE_CONFIG, gain: 480, radius: 170, spread: 0.3, colors: ["#7f1d1d", "#dc2626", "#f87171", "#fecaca", "#ffffff"] },
+  } },
+  { name: "Hologram", description: "Flimmerndes Regenbogen-Spektrum mit Glitch", style: {
+    visualizerMode: "rainbow", beatReactive: true, effectIntensity: "strong", postEffect: "glitch", textColor: "#e0f2fe",
+  } },
+  { name: "Gold Rush", description: "Goldene Wellen mit Filmkorn", style: {
+    visualizerMode: "waves", beatReactive: true, effectIntensity: "subtle", postEffect: "film-grain", textColor: "#fcd34d",
+    waveConfig: { ...DEFAULT_WAVE_CONFIG, gain: 260, colors: ["#422006", "#a16207", "#eab308", "#fde68a", "#fffbeb"] },
+  } },
+  { name: "Blood Moon", description: "Blutroter Spektrum-Ring im Filmlook", style: {
+    visualizerMode: "mono", beatReactive: true, effectIntensity: "strong", postEffect: "film-grain", textColor: "#ef4444",
+  } },
 ];
 
 export const STYLE_PRESETS: StylePreset[] = [
