@@ -35,10 +35,10 @@ const LyricLineSchema = z.object({
 
 const WaveConfigSchema = z.object({
   colors: z.tuple([z.string(), z.string(), z.string(), z.string(), z.string()]),
-  gain: z.number(),
-  radius: z.number(),
-  points: z.number().int(),
-  spread: z.number(),
+  gain: z.number().min(100).max(500),
+  radius: z.number().min(80).max(250),
+  points: z.number().int().min(12).max(64),
+  spread: z.number().min(0.2).max(1),
 });
 
 const StyleConfigSchema = z.object({
@@ -50,7 +50,7 @@ const StyleConfigSchema = z.object({
   effectIntensity: z.enum(["off", "subtle", "strong"]),
   beatReactive: z.boolean(),
   animationVariant: z.enum(["fade-drift", "zoom", "slide-horizontal", "typewriter", "handwritten", "karaoke"]),
-  visualizerMode: z.enum(["none", "rainbow", "mono", "wave"]),
+  visualizerMode: z.enum(["none", "rainbow", "mono", "wave", "waves", "spectrum"]),
   logoScale: z.number(),
   customLogo: z.string().nullable(),
   postEffect: z.enum(["none", "glitch", "vhs", "film-grain", "chromatic-aberration", "camera-shake"]),

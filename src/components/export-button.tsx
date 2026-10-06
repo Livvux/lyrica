@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import type { VideoConfig, RenderQuality } from "@/types/lyrics";
 
 const PROFILES: { key: RenderQuality; label: string; desc: string }[] = [
-  { key: "fast", label: "Schnell", desc: "720p, 24fps, ~2× schneller" },
+  { key: "fast", label: "Schnell", desc: "720p, 24fps, weniger Details" },
   { key: "balanced", label: "Ausgewogen", desc: "1080p, 30fps, gute Qualität" },
   { key: "quality", label: "Qualität", desc: "1080p, 30fps, hohe Bitrate" },
 ];
@@ -174,7 +174,7 @@ export function ExportButton({ config }: ExportButtonProps) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "lyrica-1080p.mp4";
+      a.download = `lyrica-${profile === "fast" ? "720p" : "1080p"}.mp4`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {

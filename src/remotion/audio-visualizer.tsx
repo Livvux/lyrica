@@ -1,4 +1,5 @@
-import { AbsoluteFill, staticFile } from "remotion";
+import { AbsoluteFill, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { sampleFrequency, flowingWavePath } from "@/lib/visualizer-geometry";
 import type { VisualizerMode, WaveConfig } from "@/types/lyrics";
 import { DEFAULT_WAVE_CONFIG } from "@/types/lyrics";
 
@@ -10,6 +11,7 @@ interface AudioVisualizerProps {
   logoScale: number;
   customLogo: string | null;
   isDraft?: boolean;
+  minimal?: boolean;
   waveConfig?: WaveConfig;
 }
 
@@ -45,17 +47,6 @@ function catmullRomCurve(points: { x: number; y: number }[]): string {
   return d;
 }
 
-// Sample frequency data with adjustable mapping (spread controls distribution)
-// spread < 1 = more even distribution, spread = 1 = linear (concentrated)
-function sampleFreqLog(data: number[], index: number, numPoints: number, spread: number): number {
-  const t = index / numPoints;
-  const logIdx = Math.pow(t, spread) * (data.length - 1);
-  const lo = Math.floor(logIdx);
-  const hi = Math.min(lo + 1, data.length - 1);
-  const frac = logIdx - lo;
-  return data[lo] * (1 - frac) + data[hi] * frac;
-}
-
 // Build a donut path: outer wave (Catmull-Rom spline) + inner circle (reverse arc)
 // Only the ring between inner circle and outer wave gets filled
 function buildWaveRingPath(
@@ -66,7 +57,7 @@ function buildWaveRingPath(
   const outerPoints: { x: number; y: number }[] = [];
   for (let i = 0; i < total; i++) {
     const mirrorIdx = i < numPoints ? i : total - i;
-    const amp = sampleFreqLog(data, mirrorIdx, numPoints, spread);
+    const amp = sampleFrequency(data, mirrorIdx, numPoints, spread);
     const angle = (i / total) * 2 * Math.PI - Math.PI / 2;
     const r = innerRadius + amp * gain * scale;
     outerPoints.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
@@ -116,8 +107,11 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   logoScale,
   customLogo,
   isDraft,
+  minimal = false,
   waveConfig: wc,
 }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
   if (mode === "none") return null;
 
   const waveConfig = wc ?? DEFAULT_WAVE_CONFIG;
@@ -139,7 +133,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
         fill="#000000"
         stroke="rgba(255,255,255,0.3)"
         strokeWidth={2}
-        filter="url(#ball-glow)"
+        filter={minimal ? undefined : "url(#ball-glow)"}
       />
       <g clipPath="url(#ball-clip)">
         <image
@@ -154,11 +148,42 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
     </g>
   );
 
+  if (mode === "waves" || mode === "spectrum") {
+    const samples = mode === "waves" ? Math.max(12, Math.round(waveConfig.points * (isDraft ? 0.56 : 1))) : isDraft ? 32 : 64;
+    const time = frame / fps;
+    const layers = minimal ? 2 : isDraft ? 3 : 5;
+    return (
+      <AbsoluteFill>
+        <svg width="100%" height="100%" viewBox="0 0 1920 1080">
+          <defs>
+            <linearGradient id="spectrum-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={monoColor} />
+              <stop offset="100%" stopColor={monoColor} stopOpacity="0.15" />
+            </linearGradient>
+          </defs>
+          {mode === "waves" ? Array.from({ length: layers }, (_, layer) => {
+            const points = flowingWavePath(frequencyData, samples, time, layer, waveConfig.gain, waveConfig.spread, bassEnergy);
+            return <g key={layer}>
+              <path d={`${points} L1920,1080 L0,1080 Z`} fill={waveConfig.colors[layer]} opacity={0.07} />
+              <path d={points} fill="none" stroke={waveConfig.colors[layer]} strokeWidth={3 + layer} opacity={0.85} strokeLinejoin="round" />
+            </g>;
+          }) : Array.from({ length: samples }, (_, i) => {
+            const amp = sampleFrequency(frequencyData, i, samples, 2);
+            const height = Math.min(580, Math.max(5, Math.sqrt(Math.max(0, amp)) * 520));
+            const spacing = 1560 / samples;
+            return <rect key={i} x={180 + i * spacing} y={760 - height} width={spacing * 0.65}
+              height={height} rx={spacing * 0.2} fill="url(#spectrum-fill)" />;
+          })}
+        </svg>
+      </AbsoluteFill>
+    );
+  }
+
   // --- Wave mode (Trap Nation) ---
   if (mode === "wave") {
     const numPts = isDraft ? Math.round(waveConfig.points * 0.56) : waveConfig.points;
     const smoothed = smoothData(smoothData(frequencyData));
-    const layers = getWaveLayers(waveConfig.colors, bassEnergy);
+    const layers = getWaveLayers(waveConfig.colors, bassEnergy).filter((_, i) => !minimal || i % 2 === 0);
 
     // Build donut ring paths for each color layer (outer wave spline + inner circle cutout)
     const ringPaths = layers.map((layer) =>
@@ -167,7 +192,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
 
     return (
       <AbsoluteFill>
-        <svg width={1920} height={1080} viewBox="0 0 1920 1080">
+        <svg width="100%" height="100%" viewBox="0 0 1920 1080">
           <defs>
             {/* Per-layer glow: outer layers get stronger blur */}
             {layers.map((_, li) => {
@@ -205,7 +230,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
               fillRule="evenodd"
               fill={layers[li].color}
               opacity={layers[li].opacity}
-              filter={li < layers.length - 1 ? `url(#wave-glow-${li})` : undefined}
+              filter={!minimal && li < layers.length - 1 ? `url(#wave-glow-${li})` : undefined}
             />
           ))}
 
@@ -224,7 +249,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
 
   return (
     <AbsoluteFill>
-      <svg width={1920} height={1080} viewBox="0 0 1920 1080">
+      <svg width="100%" height="100%" viewBox="0 0 1920 1080">
         <defs>
           <filter id="bar-glow">
             <feGaussianBlur stdDeviation={glowStd} result="blur" />
@@ -246,7 +271,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
         </defs>
 
         {/* All outer bars in one group — single blur pass */}
-        <g filter="url(#bar-glow)">
+        <g filter={minimal ? undefined : "url(#bar-glow)"}>
           {bars.map((amp, i) => {
             const angle = (i / numBars) * 2 * Math.PI - Math.PI / 2;
             const next = bars[(i + 1) % numBars];

@@ -1,5 +1,4 @@
 import path from "path";
-import os from "os";
 import { existsSync } from "fs";
 import { copyFile, stat, mkdir, rm } from "fs/promises";
 import { execFile } from "child_process";
@@ -8,25 +7,15 @@ import { promisify } from "util";
 import { bundle } from "@remotion/bundler";
 import type { WebpackConfiguration } from "@remotion/bundler";
 import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
+import { availableRenderCpus, chooseRenderConcurrency } from "./render-resources";
 import { sanitizeFilename } from "@/lib/sanitize-filename";
 import type { VideoConfig } from "@/types/lyrics";
 import { collectMetrics, generateHints, type RenderSummary, type SystemMetrics } from "./system-metrics";
 
 const execFileAsync = promisify(execFile);
 
-/**
- * Kill orphaned headless browser workers from prior renders that may have
- * leaked when PM2 restarted or a request was aborted. These hold ~200 MB-2 GB
- * each and starve subsequent renders of RAM.
- */
-async function killOrphanedRenderBrowsers(): Promise<void> {
-  if (process.platform !== "darwin" && process.platform !== "linux") return;
-  try {
-    await execFileAsync("pkill", ["-f", "puppeteer_dev_chrome_profile"]);
-  } catch {
-    // pkill exits non-zero when nothing matched — that's the normal case
-  }
-}
+// One active render per process prevents memory overcommit across requests.
+let renderInProgress = false;
 
 export type RenderMetrics = {
   fps: number;
@@ -192,7 +181,6 @@ interface ProfileSettings {
   fps: number;
   videoBitrate: string;
   jpegQuality: number;
-  everyNthFrame: number;
   hardCap: number;
   memPerWorkerMb: number;
 }
@@ -205,7 +193,6 @@ const PROFILES: Record<RenderProfile, ProfileSettings> = {
     fps: 24,
     videoBitrate: "5M",
     jpegQuality: 60,
-    everyNthFrame: 2,
     hardCap: 14,
     // Observed real usage under concurrency 12 is ~1.5GB/worker, not 800MB —
     // the old budget under-estimated memory and pushed macOS into memory
@@ -219,7 +206,6 @@ const PROFILES: Record<RenderProfile, ProfileSettings> = {
     fps: 30,
     videoBitrate: "10M",
     jpegQuality: 80,
-    everyNthFrame: 1,
     hardCap: 10,
     memPerWorkerMb: 2000,
   },
@@ -230,7 +216,6 @@ const PROFILES: Record<RenderProfile, ProfileSettings> = {
     fps: 30,
     videoBitrate: "18M",
     jpegQuality: 95,
-    everyNthFrame: 1,
     hardCap: 8,
     memPerWorkerMb: 3000,
   },
@@ -265,8 +250,10 @@ export async function renderVideo(
   if (!audioFilename) throw new Error("Ungültige audioUrl: Dateiname konnte nicht extrahiert werden");
   let renderConfig: VideoConfig;
 
+  if (renderInProgress) throw new Error("Ein Export läuft bereits. Bitte warte, bis er abgeschlossen ist.");
+  renderInProgress = true;
   try {
-    await killOrphanedRenderBrowsers();
+    if (signal?.aborted) throw new Error("Render abgebrochen.");
 
     log("Remotion-Bundle wird geladen…");
     const bundleStart = Date.now();
@@ -302,13 +289,15 @@ export async function renderVideo(
       try {
         await stat(tmpBgSrc);
         log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
-        await resizeBgIfNeeded(tmpBgSrc, bgDest, renderWidth, renderHeight);
+        if (config.style.bgType === "video") await copyFile(tmpBgSrc, bgDest);
+        else await resizeBgIfNeeded(tmpBgSrc, bgDest, renderWidth, renderHeight);
         bgImageForRender = `/${assetDirName}/${bgImageBasename}`;
       } catch {
         const publicBgSrc = path.join(publicDir, bgImageBasename);
         try {
           log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
-          await resizeBgIfNeeded(publicBgSrc, bgDest, renderWidth, renderHeight);
+          if (config.style.bgType === "video") await copyFile(publicBgSrc, bgDest);
+          else await resizeBgIfNeeded(publicBgSrc, bgDest, renderWidth, renderHeight);
           bgImageForRender = `/${assetDirName}/${bgImageBasename}`;
           log("Hintergrundbild in den Render-Asset-Ordner kopiert und skaliert");
         } catch {
@@ -338,6 +327,8 @@ export async function renderVideo(
 
     renderConfig = {
       ...config,
+      previewQuality: undefined,
+      lines: config.lines.map((line) => ({ ...line, startFrame: Math.round(line.startSec * renderFps), endFrame: Math.round(line.endSec * renderFps) })),
       audioUrl: audioAssetPath,
       style: { ...config.style, bgImage: bgImageForRender, customLogo: logoForRender },
       width: renderWidth,
@@ -358,24 +349,18 @@ export async function renderVideo(
     });
     log(`Composition: ${composition.width}x${composition.height}, ${composition.durationInFrames} Frames`);
 
-    const cpus = os.cpus().length;
-    const totalMemMb = os.totalmem() / 1024 / 1024;
-    const envConcurrency = Number.parseInt(
-      process.env.RENDER_CONCURRENCY ?? "",
-      10
-    );
-    const hasEnvConcurrency = Number.isInteger(envConcurrency) && envConcurrency >= 1;
-    const memBudgetFactor = profileKey === "fast" ? 0.6 : 0.78;
-    const memoryCap = Math.max(1, Math.floor((totalMemMb * memBudgetFactor) / profile.memPerWorkerMb));
-    const autoConcurrency = Math.max(1, Math.min(cpus, profile.hardCap, memoryCap));
-    const concurrency = hasEnvConcurrency ? envConcurrency : autoConcurrency;
-
+    const cpus = await availableRenderCpus();
+    const resources = await collectMetrics();
+    const totalMemMb = resources.memTotalMb;
+    const tuning = chooseRenderConcurrency({
+      cpus, totalMb: totalMemMb, availableMb: Math.max(0, totalMemMb - resources.memUsedMb),
+      workerMb: profile.memPerWorkerMb, durationSec, hardCap: profile.hardCap,
+      override: process.env.RENDER_CONCURRENCY,
+    });
+    const concurrency = tuning.concurrency;
     log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
-    if (hasEnvConcurrency) {
-      log(`Concurrency-Override aktiv via Env: ${envConcurrency}`);
-    } else {
-      log(`Auto-Tuning: RAM-Budget ${Math.round(totalMemMb * memBudgetFactor)}MB, ~${profile.memPerWorkerMb}MB/Worker`);
-    }
+    log(tuning.overridden ? `Concurrency-Override aktiv via Env: ${concurrency}`
+      : `Auto-Tuning: verfügbares RAM-Budget ${Math.round(tuning.budgetMb)}MB, ~${tuning.workerBudgetMb}MB/Worker inkl. Audio`);
     log(`Codec: H.264, Bitrate: ${profile.videoBitrate}, JPEG: ${profile.jpegQuality}, HW-Accel: if-possible`);
 
     const renderStart = Date.now();
@@ -412,13 +397,12 @@ export async function renderVideo(
       x264Preset: "ultrafast",
       jpegQuality: profile.jpegQuality,
       imageFormat: "jpeg",
-      everyNthFrame: profile.everyNthFrame,
       disallowParallelEncoding: false,
       // encodingBufferSize/encodingMaxRate intentionally omitted: they force
       // x264 software encoding and disable VideoToolbox HW acceleration on
       // Apple Silicon, which costs us ~5x render speed on the M4 Pro.
       chromiumOptions: {
-        gl: "angle",
+        gl: process.platform === "darwin" ? "angle" : undefined,
       },
       onProgress: ({ progress }) => {
         onProgress?.({ phase: "rendering", progress });
@@ -498,6 +482,7 @@ export async function renderVideo(
 
     return outputPath;
   } finally {
+    renderInProgress = false;
     if (bundleAssetDir) {
       await rm(bundleAssetDir, { recursive: true, force: true }).catch(() => {});
     }

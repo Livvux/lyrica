@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useDeferredValue, useRef } from "react";
 import { UploadForm } from "@/components/upload-form";
-import { PreviewPlayer } from "@/components/preview-player";
+import dynamic from "next/dynamic";
 import { LyricsEditor } from "@/components/lyrics-editor";
 import { ExportButton } from "@/components/export-button";
 import { CustomizationPanel } from "@/components/customization-panel";
@@ -15,6 +15,8 @@ import { useHistory } from "@/lib/use-history";
 import { savePersistence, loadPersistence } from "@/lib/use-persistence";
 import { DEFAULT_STYLE } from "@/types/lyrics";
 import type { LyricLine, VideoConfig, StyleConfig, ValidationResult, SongMatch, ReferenceLyrics, MixTrack, LineValidation } from "@/types/lyrics";
+
+const PreviewPlayer = dynamic(() => import("@/components/preview-player").then((module) => module.PreviewPlayer), { ssr: false });
 
 type ValidationPhase = "idle" | "identifying" | "fetching" | "validating" | "done";
 

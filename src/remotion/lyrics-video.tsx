@@ -4,7 +4,8 @@ import { BeatParticles } from "./beat-particles";
 import { AudioVisualizer } from "./audio-visualizer";
 import { Watermark } from "./watermark";
 import { LyricsLineComponent } from "./lyrics-line";
-import { useBeatPulse } from "./use-beat-pulse";
+import { useBeatPulse, IDLE_BEAT } from "./use-beat-pulse";
+import type { BeatPulse } from "./use-beat-pulse";
 import {
   FilmGrainEffect,
   ChromaticAberrationEffect,
@@ -44,13 +45,16 @@ function getActiveLineIndices(lines: LyricLine[], frame: number): number[] {
   return active;
 }
 
-export const LyricsVideo: React.FC<VideoConfig> = ({
+const VideoScene: React.FC<VideoConfig & { beat: BeatPulse }> = ({
   lines,
   audioUrl,
   style,
   renderQuality,
+  previewQuality,
+  beat,
 }) => {
-  const reduceDetail = renderQuality === "fast";
+  const reduceDetail = renderQuality === "fast" || (previewQuality !== undefined && previewQuality !== "high");
+  const minimal = previewQuality === "low";
   // Preview (client): audioUrl starts with "/" (e.g. "/api/audio/abc.mp3") -> use directly
   // Render (server): audioUrl is just filename (e.g. "abc.mp3") -> use staticFile (served from publicDir)
   const resolvedAudioUrl =
@@ -60,12 +64,6 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
 
   const frame = useCurrentFrame();
   const activeLineIndices = getActiveLineIndices(lines, frame);
-
-  const beat = useBeatPulse(
-    resolvedAudioUrl,
-    style.effectIntensity,
-    style.beatReactive
-  );
 
   const shake = useCameraShake(
     frame,
@@ -78,7 +76,7 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
   return (
     <AbsoluteFill style={{ transform: `translate(${shake.x}px, ${shake.y}px)` }}>
       <Background src={style.bgImage} brightness={beat.bgBrightness} scale={beat.bgScale} bgType={style.bgType} />
-      <BeatParticles bassEnergy={beat.bassEnergy} isDraft={reduceDetail} />
+      {!minimal && <BeatParticles bassEnergy={beat.bassEnergy} isDraft={reduceDetail} />}
       <AudioVisualizer
         frequencyData={beat.frequencyData}
         bassEnergy={beat.bassEnergy}
@@ -87,6 +85,7 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
         logoScale={style.logoScale}
         customLogo={style.customLogo}
         isDraft={reduceDetail}
+        minimal={minimal}
         waveConfig={style.waveConfig}
       />
       {audioUrl && <Audio src={resolvedAudioUrl} />}
@@ -117,4 +116,17 @@ export const LyricsVideo: React.FC<VideoConfig> = ({
       />
     </AbsoluteFill>
   );
+};
+
+const ReactiveVideo: React.FC<VideoConfig> = (config) => {
+  const url = config.audioUrl.startsWith("/") || config.audioUrl.startsWith("blob:") || config.audioUrl.startsWith("http")
+    ? config.audioUrl : staticFile(config.audioUrl);
+  const beat = useBeatPulse(url, config.style.effectIntensity, config.style.beatReactive, config.style.visualizerMode !== "none");
+  return <VideoScene {...config} beat={beat} />;
+};
+
+export const LyricsVideo: React.FC<VideoConfig> = (config) => {
+  const needsAnalysis = config.audioUrl && (config.style.visualizerMode !== "none" ||
+    (config.style.beatReactive && config.style.effectIntensity !== "off"));
+  return needsAnalysis ? <ReactiveVideo {...config} /> : <VideoScene {...config} beat={IDLE_BEAT} />;
 };

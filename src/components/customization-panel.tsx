@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import Image from "next/image";
-import { COLOR_PRESETS, STYLE_PRESETS, DEFAULT_WAVE_CONFIG } from "@/types/lyrics";
+import { COLOR_PRESETS, STYLE_PRESETS, VISUALIZER_PRESETS, DEFAULT_WAVE_CONFIG } from "@/types/lyrics";
 import type { StyleConfig, EffectIntensity, AnimationVariant, VisualizerMode, PostEffect, WaveConfig } from "@/types/lyrics";
 
 interface CustomizationPanelProps {
@@ -46,7 +46,9 @@ const VISUALIZER_OPTIONS: { value: VisualizerMode; label: string }[] = [
   { value: "none", label: "Aus" },
   { value: "rainbow", label: "Regenbogen" },
   { value: "mono", label: "Einfarbig" },
-  { value: "wave", label: "Trap Nation" },
+  { value: "wave", label: "Wellenring" },
+  { value: "waves", label: "Wellen" },
+  { value: "spectrum", label: "Spektrum" },
 ];
 
 const POST_EFFECT_OPTIONS: { value: PostEffect; label: string }[] = [
@@ -151,7 +153,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
   return (
     <div className="flex flex-col gap-3 rounded-lg bg-white/5 p-4">
       {/* Tab Navigation */}
-      <div className="flex gap-1 rounded-md bg-white/10 p-0.5">
+      <div className="flex flex-wrap gap-1 rounded-md bg-white/10 p-0.5">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}
@@ -281,13 +283,38 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
         {/* ===== VISUALIZER TAB ===== */}
         {activeTab === "visualizer" && (
           <>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-label="Visualizer-Presets">
+              {VISUALIZER_PRESETS.map((preset) => {
+                const selected = Object.entries(preset.style).every(([key, value]) =>
+                  JSON.stringify(style[key as keyof StyleConfig]) === JSON.stringify(value));
+                return (
+                  <button key={preset.name} type="button" aria-pressed={selected}
+                    onClick={() => update(preset.style)}
+                    className={`rounded-xl border p-3 text-left transition ${selected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-white/5 hover:border-white/30 hover:bg-white/10"}`}>
+                    <svg viewBox="0 0 160 36" className="mb-2 h-9 w-full" aria-hidden="true">
+                      {preset.style.visualizerMode === "waves" ? [0, 1, 2].map((i) => (
+                        <path key={i} d={`M0 ${18+i*3} Q20 ${-8+i*8} 40 18 T80 18 T120 18 T160 18`}
+                          fill="none" stroke={preset.style.waveConfig?.colors[i+1]} strokeWidth="2" opacity={1-i*0.2} />
+                      )) : preset.style.visualizerMode === "spectrum" ? Array.from({ length: 20 }, (_, i) => (
+                        <rect key={i} x={i*8} y={18-Math.sin(i*0.65)**2*14} width="4" height={4+Math.sin(i*0.65)**2*28} rx="2" fill="#22d3ee" />
+                      )) : [0, 1, 2].map((i) => (
+                        <ellipse key={i} cx="80" cy="18" rx={12+i*6} ry={8+i*4} fill="none" stroke={preset.style.waveConfig?.colors[i] ?? (preset.name === "Prism" ? ["#22d3ee", "#c084fc", "#fb7185"][i] : "#ffffff")} opacity={1-i*0.2} />
+                      ))}
+                    </svg>
+                    <span className="block text-sm font-medium text-white">{preset.name}</span>
+                    <span className="mt-1 block text-xs leading-relaxed text-white/50">{preset.description}</span>
+                  </button>
+                );
+              })}
+            </div>
             {/* Audio Visualizer */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs text-white/40">Audio-Visualizer</label>
-              <div className="flex rounded-md bg-white/10 p-0.5">
+              <div className="flex flex-wrap rounded-md bg-white/10 p-0.5">
                 {VISUALIZER_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
+                    aria-pressed={style.visualizerMode === opt.value}
                     onClick={() => update({ visualizerMode: opt.value })}
                     className={`flex-1 rounded px-3 py-1.5 text-xs transition ${
                       style.visualizerMode === opt.value
@@ -302,7 +329,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
             </div>
 
             {/* Logo Size (only when visualizer is active) */}
-            {style.visualizerMode !== "none" && (
+            {["wave", "rainbow", "mono"].includes(style.visualizerMode) && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-white/40">
                   Logo-Größe: {style.logoScale}%
@@ -319,9 +346,11 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
             )}
 
             {/* Wave Config (Trap Nation) */}
-            {style.visualizerMode === "wave" && (() => {
+            {(style.visualizerMode === "wave" || style.visualizerMode === "waves") && (() => {
               const wc = style.waveConfig ?? DEFAULT_WAVE_CONFIG;
-              const RING_LABELS = ["Ring 1 (außen)", "Ring 2", "Ring 3", "Ring 4", "Ring 5 (innen)"];
+              const RING_LABELS = style.visualizerMode === "wave"
+                ? ["Ring 1 (außen)", "Ring 2", "Ring 3", "Ring 4", "Ring 5 (innen)"]
+                : ["Welle 1", "Welle 2", "Welle 3", "Welle 4", "Welle 5"];
               function updateWave(partial: Partial<WaveConfig>) {
                 update({ waveConfig: { ...wc, ...partial } });
               }
@@ -332,15 +361,16 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
               }
               return (
                 <div className="flex flex-col gap-3 rounded-md bg-white/5 p-3">
-                  <label className="text-xs font-medium text-white/50">Trap Nation Einstellungen</label>
+                  <label className="text-xs font-medium text-white/50">Wellen-Einstellungen</label>
 
                   {/* Ring Colors */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs text-white/40">Ring-Farben</label>
+                    <label className="text-xs text-white/40">Farben</label>
                     {wc.colors.map((color, i) => (
                       <div key={i} className="flex items-center gap-2">
                         <input
                           type="color"
+                          aria-label={RING_LABELS[i]}
                           value={color}
                           onChange={(e) => updateColor(i, e.target.value)}
                           className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent"
@@ -373,7 +403,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
                   </div>
 
                   {/* Radius */}
-                  <div className="flex flex-col gap-1.5">
+                  {style.visualizerMode === "wave" && <div className="flex flex-col gap-1.5">
                     <label className="text-xs text-white/40">
                       Kreis-Radius: {wc.radius}px
                     </label>
@@ -386,7 +416,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
                       onChange={(e) => updateWave({ radius: Number(e.target.value) })}
                       className="w-full accent-white"
                     />
-                  </div>
+                  </div>}
 
                   {/* Wave Points */}
                   <div className="flex flex-col gap-1.5">
@@ -465,7 +495,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
             {/* Effect Intensity */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs text-white/40">Effekt-Intensität</label>
-              <div className="flex rounded-md bg-white/10 p-0.5">
+              <div className="flex flex-wrap rounded-md bg-white/10 p-0.5">
                 {INTENSITY_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}

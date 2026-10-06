@@ -41,10 +41,11 @@ async function getContainerMemory(): Promise<{ used: number; total: number } | n
       readFile("/sys/fs/cgroup/memory.max", "utf-8").catch(() => null),
     ]);
     if (usageStr && limitStr && limitStr.trim() !== "max") {
-      return {
-        used: parseInt(usageStr.trim(), 10),
-        total: parseInt(limitStr.trim(), 10),
-      };
+      const used = Number(usageStr.trim());
+      const total = Number(limitStr.trim());
+      if (Number.isFinite(used) && used >= 0 && total > 0 && total < os.totalmem()) {
+        return { used, total };
+      }
     }
 
     // cgroup v1 fallback
@@ -53,10 +54,12 @@ async function getContainerMemory(): Promise<{ used: number; total: number } | n
       readFile("/sys/fs/cgroup/memory/memory.limit_in_bytes", "utf-8").catch(() => null),
     ]);
     if (usageV1 && limitV1) {
-      return {
-        used: parseInt(usageV1.trim(), 10),
-        total: parseInt(limitV1.trim(), 10),
-      };
+      const used = Number(usageV1.trim());
+      const total = Number(limitV1.trim());
+      // Unlimited cgroup v1 uses a huge sentinel, not usable physical memory.
+      if (Number.isFinite(used) && used >= 0 && total > 0 && total < os.totalmem()) {
+        return { used, total };
+      }
     }
   } catch {
     // Not in a container

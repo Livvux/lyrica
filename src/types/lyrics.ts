@@ -23,7 +23,7 @@ export interface LyricLine {
 
 export type EffectIntensity = "off" | "subtle" | "strong";
 
-export type VisualizerMode = "none" | "rainbow" | "mono" | "wave";
+export type VisualizerMode = "none" | "rainbow" | "mono" | "wave" | "waves" | "spectrum";
 
 export type AnimationVariant = "fade-drift" | "zoom" | "slide-horizontal" | "typewriter" | "handwritten" | "karaoke";
 
@@ -88,6 +88,30 @@ export interface StylePreset {
   description: string;
   style: Partial<StyleConfig>;
 }
+
+export const VISUALIZER_PRESETS: StylePreset[] = [
+  { name: "Ocean", description: "Fließende Wellen in kühlem Blau", style: {
+    visualizerMode: "waves", beatReactive: true, effectIntensity: "subtle", postEffect: "none",
+    waveConfig: { ...DEFAULT_WAVE_CONFIG, gain: 220, colors: ["#164e63", "#0891b2", "#22d3ee", "#67e8f9", "#ecfeff"] },
+  } },
+  { name: "Aurora", description: "Leuchtende Wellen in Violett und Mint", style: {
+    visualizerMode: "waves", beatReactive: true, effectIntensity: "strong", postEffect: "none",
+    waveConfig: { ...DEFAULT_WAVE_CONFIG, gain: 360, colors: ["#4c1d95", "#7c3aed", "#c084fc", "#2dd4bf", "#ccfbf1"] },
+  } },
+  { name: "Pulse", description: "Mehrfarbige, pulsierende Wellenringe", style: {
+    visualizerMode: "wave", beatReactive: true, effectIntensity: "strong", postEffect: "none",
+    waveConfig: { ...DEFAULT_WAVE_CONFIG },
+  } },
+  { name: "Spectrum", description: "Klarer Equalizer mit Cyan-Verlauf", style: {
+    visualizerMode: "spectrum", beatReactive: true, effectIntensity: "subtle", postEffect: "none", textColor: "#22d3ee",
+  } },
+  { name: "Prism", description: "Kreisförmiges Regenbogen-Spektrum", style: {
+    visualizerMode: "rainbow", beatReactive: true, effectIntensity: "subtle", postEffect: "none",
+  } },
+  { name: "Mono", description: "Reduzierter weißer Spektrum-Ring", style: {
+    visualizerMode: "mono", beatReactive: true, effectIntensity: "subtle", postEffect: "none", textColor: "#ffffff",
+  } },
+];
 
 export const STYLE_PRESETS: StylePreset[] = [
   {
@@ -169,6 +193,8 @@ export interface VideoConfig {
   width: number;
   height: number;
   renderQuality?: RenderQuality;
+  /** Preview-only detail budget; never used to choose export quality. */
+  previewQuality?: "low" | "balanced" | "high";
 }
 
 // --- Lyrics Validation ---

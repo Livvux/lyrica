@@ -12,7 +12,7 @@ Features
 
 |Area                    |What you can do                                                                                                                |
 |------------------------|-------------------------------------------------------------------------------------------------------------------------------|
-|Music visualizers       |Choose rainbow, monochrome, or circular wave visuals, with configurable wave colors and beat-reactive effects.                 |
+|Music visualizers       |Choose Ocean, Aurora, Pulse, Spectrum, Prism, or Mono presets, including flowing waves, equalizer bars, and circular visuals.                 |
 |Optional lyrics         |Generate word-level timestamps through Groq or OpenAI, edit lyric text, add or remove lines, and undo or redo changes.         |
 |Text animation          |Choose drift, zoom, slide, typewriter, handwritten-style, or karaoke animation. Adjust fonts, text size, and colors.           |
 |Backgrounds and branding|Upload image or video backgrounds and a custom logo. Configure logo size and watermark visibility.                             |
@@ -99,7 +99,11 @@ Export profiles
 
 The current profiles target landscape video. Rendering speed depends on the audio duration, selected effects, browser, CPU, and available memory.
 
-Lyrica selects render concurrency based on the detected CPU count and total system memory. To reduce memory pressure, set a lower worker count in .env.local:
+The preview starts in Auto mode. It uses CPU/memory hints for its initial detail budget, then measures delivered Player frames during playback. Two slow three-second windows lower detail; six healthy windows allow an upgrade. Pauses, seeks, buffering, and hidden tabs do not count toward a sample. Low detail removes visualizer blur and particles; balanced detail reduces geometry; full detail restores the complete scene. You can override Auto in the preview controls. Preview settings never change the selected export profile.
+
+Lyrica selects export concurrency using available CPU parallelism, cgroup CPU quotas, available memory (including container limits), and an estimate of decoded audio memory per worker. It reserves memory and a CPU thread for the rest of the app. A process accepts one export at a time to avoid overcommitting resources. Multiple server processes need an external shared job queue or resource isolation. Hardware encoding is used when Remotion supports it on the host, with software fallback. These are conservative resource budgets, not a guarantee against exhaustion for arbitrary media.
+
+To reduce memory pressure further, set a lower worker count in .env.local:
 
 RENDER_CONCURRENCY=2
 
@@ -223,7 +227,7 @@ pnpm type-check
 # Stop the development server before this command:
 pnpm build
 
-There is no pnpm test script configured. The root test-*.ts files are developer scripts, not a complete automated test suite. Manually check a short visualizer-only export and, for transcription changes, the lyrics workflow with your own test audio.
+Run `pnpm test` for media delivery, preview adaptation, and export resource-budget regression tests. The root test-*.ts files remain manual developer scripts. Also check a short visualizer-only export and, for transcription changes, the lyrics workflow with your own test audio.
 
 Contributing
 
