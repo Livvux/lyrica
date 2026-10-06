@@ -296,9 +296,9 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
                         <path key={i} d={`M0 ${18+i*3} Q20 ${-8+i*8} 40 18 T80 18 T120 18 T160 18`}
                           fill="none" stroke={preset.style.waveConfig?.colors[i+1]} strokeWidth="2" opacity={1-i*0.2} />
                       )) : preset.style.visualizerMode === "spectrum" ? Array.from({ length: 20 }, (_, i) => (
-                        <rect key={i} x={i*8} y={18-Math.sin(i*0.65)**2*14} width="4" height={4+Math.sin(i*0.65)**2*28} rx="2" fill="#22d3ee" />
+                        <rect key={i} x={i*8} y={18-Math.sin(i*0.65)**2*14} width="4" height={4+Math.sin(i*0.65)**2*28} rx="2" fill={preset.style.textColor ?? "#22d3ee"} />
                       )) : [0, 1, 2].map((i) => (
-                        <ellipse key={i} cx="80" cy="18" rx={12+i*6} ry={8+i*4} fill="none" stroke={preset.style.waveConfig?.colors[i] ?? (preset.name === "Prism" ? ["#22d3ee", "#c084fc", "#fb7185"][i] : "#ffffff")} opacity={1-i*0.2} />
+                        <ellipse key={i} cx="80" cy="18" rx={12+i*6} ry={8+i*4} fill="none" stroke={preset.style.waveConfig?.colors[i] ?? (preset.style.visualizerMode === "rainbow" ? ["#22d3ee", "#c084fc", "#fb7185"][i] : preset.style.textColor ?? "#ffffff")} opacity={1-i*0.2} />
                       ))}
                     </svg>
                     <span className="block text-sm font-medium text-white">{preset.name}</span>
