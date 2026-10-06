@@ -17,6 +17,8 @@
 
 # production
 /build
+/dist/
+/macos/.build/
 
 # misc
 .DS_Store
