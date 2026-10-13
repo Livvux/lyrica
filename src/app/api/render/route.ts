@@ -1,4 +1,4 @@
-import { mkdir } from "fs/promises";
+import { mkdir,rm } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
@@ -6,6 +6,7 @@ import {VideoConfigSchema} from "@/lib/private-render/schema";
 import {requireActor,privateFailure} from "@/lib/private-render/server";
 import {registerOwnedMedia,validateOwnedSources} from "@/lib/private-render/owned-media";
 import {readBoundedBody} from "@/lib/private-render/body";
+import {privateDiagnostic} from "@/lib/private-render/diagnostics";
 import { renderVideo } from "@/lib/render-video";
 import { cleanupTmpFiles } from "@/lib/cleanup-tmp";
 import { rateLimit } from "@/lib/rate-limit";
@@ -111,10 +112,11 @@ export async function POST(request: Request) {
         send({ phase: "done", filename: outputFilename });
         renderPerf({ status: 200 });
       } catch (e) {
+        await rm(outputPath,{force:true}).catch(()=>{});
         if (request.signal.aborted) {
           renderPerf({ status: 499, reason: "client-aborted" });
         } else {
-          void e;
+          console.error("[render] Private failure callsites",privateDiagnostic(e));
           send({ phase: "log", message: "FEHLER: Privater Export fehlgeschlagen." });
           send({ phase: "error", error: "Fehler beim Rendern des Videos." });
           renderPerf({ status: 500, reason:"render-failed" });
