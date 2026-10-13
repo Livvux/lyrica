@@ -2,7 +2,7 @@ import {createHash,randomUUID} from "node:crypto";
 import type {Actor,PrivateStore} from "./store";
 import {MAX_RETAINED_BYTES} from "./media";
 export type CloudState="queued"|"preparing"|"starting"|"rendering"|"cancelling"|"succeeded"|"failed"|"cancelled"|"needs-attention";
-export type CloudJob=Actor&{id:string;state:CloudState;config:Record<string,unknown>;renderId:string|null;progress:number;errorCode:string|null;outputBytes:number;cleanupPending:boolean;cancelRequested:boolean;cancelSent:boolean;attemptConsumed:boolean;leaseUntil:number};
+export type CloudJob=Actor&{id:string;state:CloudState;config:Record<string,unknown>;renderId:string|null;progress:number;errorCode:string|null;outputBytes:number;cleanupPending:boolean;cancelRequested:boolean;cancelSent:boolean;attemptConsumed:boolean;leaseUntil:number;invokedAt:number};
 export type CloudPoll={state:"running"|"succeeded"|"failed"|"cancelled";progress:number;outputBytes?:number};
 export interface CloudAdapter {
  prepare(job:CloudJob):Promise<{inputProps:Record<string,unknown>}>;
@@ -20,7 +20,7 @@ export class CloudJobs {
  constructor(private store:PrivateStore,private adapter:CloudAdapter){}
  private job(id:string):CloudJob|null {
   const row=this.store.db.prepare("SELECT * FROM cloud_jobs WHERE id=?").get(id);if(!row)return null;
-  return {id:String(row.id),ownerId:String(row.owner_id),projectId:String(row.project_id),state:row.state as CloudState,config:JSON.parse(String(row.config_json)),renderId:row.render_id?String(row.render_id):null,progress:Number(row.progress),errorCode:row.error_code?String(row.error_code):null,outputBytes:Number(row.output_bytes),cleanupPending:row.cleanup_pending===1,cancelRequested:row.cancel_requested===1,cancelSent:row.cancel_sent===1,attemptConsumed:row.attempt_consumed===1,leaseUntil:Number(row.lease_until)};
+  return {id:String(row.id),ownerId:String(row.owner_id),projectId:String(row.project_id),state:row.state as CloudState,config:JSON.parse(String(row.config_json)),renderId:row.render_id?String(row.render_id):null,progress:Number(row.progress),errorCode:row.error_code?String(row.error_code):null,outputBytes:Number(row.output_bytes),cleanupPending:row.cleanup_pending===1,cancelRequested:row.cancel_requested===1,cancelSent:row.cancel_sent===1,attemptConsumed:row.attempt_consumed===1,leaseUntil:Number(row.lease_until),invokedAt:Number(row.invoked_at)};
  }
  private owned(actor:Actor,id:string):CloudJob {const job=this.job(id);if(!job||job.ownerId!==actor.ownerId||job.projectId!==actor.projectId)throw new Error("Nicht gefunden.");return job;}
  private update(id:string,changes:Record<string,string|number|null>){const entries=Object.entries(changes);this.store.db.prepare(`UPDATE cloud_jobs SET ${entries.map(([name])=>`${name}=?`).join(",")},updated_at=? WHERE id=?`).run(...entries.map(([,value])=>value),Date.now(),id);}
@@ -67,7 +67,7 @@ export class CloudJobs {
     this.update(id,{state:"preparing"});let prepared;
     try{prepared=await this.adapter.prepare(job);}catch{this.update(id,{error_code:"preflight-failed"});await this.finish(job,"failed");this.update(id,{error_code:"preflight-failed"});return;}
     job=this.job(id)!;if(job.cancelRequested){await this.finish(job,"cancelled");return;}
-    this.store.transaction(()=>{if(Number(this.store.db.prepare("SELECT COUNT(*) AS count FROM cloud_jobs WHERE attempt_consumed=1").get()!.count)>=1)throw new Error("Testbudget");this.update(id,{state:"starting",attempt_consumed:1});});
+    this.store.transaction(()=>{if(Number(this.store.db.prepare("SELECT COUNT(*) AS count FROM cloud_jobs WHERE attempt_consumed=1").get()!.count)>=1)throw new Error("Testbudget");this.update(id,{state:"starting",attempt_consumed:1,invoked_at:Date.now()});});
     try{const renderId=await this.adapter.start(job,prepared);if(!/^[a-zA-Z0-9_-]{1,80}$/.test(renderId))throw new Error("Invalid render ID");this.update(id,{render_id:renderId,state:this.job(id)!.cancelRequested?"cancelling":"rendering"});}
     catch{this.update(id,{state:"needs-attention",error_code:"invocation-uncertain"});return;}
    }

@@ -7,6 +7,7 @@ import { promisify } from "util";
 import { bundle } from "@remotion/bundler";
 import type { WebpackConfiguration } from "@remotion/bundler";
 import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
+import {assetFilename} from "./private-render/sources";
 import {servePrivateBundle} from "./private-render/bundle-server";
 import { availableRenderCpus, chooseRenderConcurrency } from "./render-resources";
 import { sanitizeFilename } from "@/lib/sanitize-filename";
@@ -229,6 +230,7 @@ export async function renderVideo(
   outputPath: string,
   callbacks?: RenderCallbacks
 ): Promise<string> {
+  config={...config,audioUrl:`/api/audio/${assetFilename(config.audioUrl)}`,style:{...config.style,bgImage:config.style.bgImage==="/bg-default.jpg"?config.style.bgImage:`/api/audio/${assetFilename(config.style.bgImage)}`,customLogo:config.style.customLogo?`/api/audio/${assetFilename(config.style.customLogo)}`:null}};
   const { onProgress, onLog, onMetrics, onSummary, signal } = callbacks ?? {};
   const log = (msg: string) => onLog?.(msg);
   const publicDir = path.join(process.cwd(), "public");

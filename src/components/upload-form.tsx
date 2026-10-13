@@ -1,4 +1,5 @@
 "use client";
+import {privateFetch as fetch,boundMediaUrl} from "@/lib/private-fetch";
 
 import { useState, useRef } from "react";
 
@@ -57,7 +58,7 @@ export function UploadForm({ onAudioUploaded }: UploadFormProps) {
       }
 
       if (data.audioFilename) {
-        onAudioUploaded(`/api/audio/${data.audioFilename}`, durationSec, file.name);
+        onAudioUploaded(boundMediaUrl(`/api/audio/${data.audioFilename}`), durationSec, file.name);
       }
     } catch {
       setError("Ein unerwarteter Fehler ist aufgetreten.");
@@ -172,7 +173,7 @@ export function UploadForm({ onAudioUploaded }: UploadFormProps) {
                   return;
                 }
                 if (data.audioFilename) {
-                  onAudioUploaded(`/api/audio/${data.audioFilename}`, durationSec, "visite.mp3");
+                  onAudioUploaded(boundMediaUrl(`/api/audio/${data.audioFilename}`), durationSec, "visite.mp3");
                 }
               } catch {
                 setError("Schnellimport fehlgeschlagen.");

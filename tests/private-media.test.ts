@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,symlinkSync} from "node:fs";
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,symlinkSync,existsSync} from "node:fs";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {after,test} from "node:test";
@@ -41,4 +41,10 @@ test("ambiguous remote cleanup keeps its quota reserved and blocks media access"
  assert.equal(store.media(actor,"ambiguous.wav"),null);
  assert.equal(store.retainedMediaBytes(),before+7);
  await assert.rejects(failed.resolve(actor,"ambiguous.wav"));
+});
+test("quota-rejected uploads remove their unregistered local bytes",async()=>{
+ const before=store.retainedMediaBytes();store.registerMedia(actor,{filename:"quota-held.bin",contentType:"application/octet-stream",size:512*1024*1024-before,objectKey:null});
+ writeFileSync(path.join(cache,"rejected.wav"),"fixture");
+ try{await assert.rejects(media.register(actor,"rejected.wav","audio/wav"),/Speicher voll/);assert.equal(store.media(actor,"rejected.wav"),null);assert.equal(existsSync(path.join(cache,"rejected.wav")),false);}
+ finally{store.removeMedia(actor,"quota-held.bin");}
 });

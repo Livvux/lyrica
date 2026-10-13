@@ -1,4 +1,5 @@
 "use client";
+import {privateFetch as fetch} from "@/lib/private-fetch";
 
 import { useState, useEffect } from "react";
 import type { MixTrack } from "@/types/lyrics";

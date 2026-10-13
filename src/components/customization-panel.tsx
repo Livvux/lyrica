@@ -1,4 +1,5 @@
 "use client";
+import {privateFetch as fetch,boundMediaUrl} from "@/lib/private-fetch";
 
 import { useRef, useState, useEffect } from "react";
 import Image from "next/image";
@@ -111,7 +112,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
         const data = await res.json();
         if (data.filename) {
           update({
-            bgImage: `/api/audio/${data.filename}`,
+            bgImage: boundMediaUrl(`/api/audio/${data.filename}`),
             bgType: isVideo ? "video" : "image",
           });
         }
@@ -137,7 +138,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
       }
       const data = await res.json();
       if (data.filename) {
-        update({ customLogo: `/api/audio/${data.filename}` });
+        update({ customLogo: boundMediaUrl(`/api/audio/${data.filename}`) });
       }
     } catch {
       setLogoError("Upload fehlgeschlagen.");

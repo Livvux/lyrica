@@ -56,7 +56,7 @@ export async function createMediaResponse(
       "Content-Type": contentType,
       "Content-Length": String(stats.size),
       "Accept-Ranges": "bytes",
-      "Cache-Control": download ? "private, no-store" : "private, max-age=3600",
+      "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
     });
     if (download) {

@@ -1,3 +1,4 @@
+import {privateFetch} from "./private-fetch";
 export type PublicCloudJob={id:string;state:"queued"|"preparing"|"starting"|"rendering"|"cancelling"|"succeeded"|"failed"|"cancelled"|"needs-attention";progress:number;errorCode:string|null;outputBytes:number;cleanupPending:boolean;cancellationConfirmed:boolean;downloadReady:boolean};
 type Snapshot={job:PublicCloudJob|null;error:string|null;pending:"start"|"cancel"|"download"|null};
 type Fetcher=(url:string,init?:RequestInit)=>Promise<Response>;
@@ -5,7 +6,7 @@ export const cloudActive=(job:PublicCloudJob|null)=>Boolean(job&&!["succeeded","
 export class CloudExportClient {
  private snapshot:Snapshot={job:null,error:null,pending:null};
  private listeners=new Set<()=>void>();private refreshing=false;private key:string|null=null;
- constructor(private fetcher:Fetcher=(url,init)=>fetch(url,init)){}
+ constructor(private fetcher:Fetcher=(url,init)=>privateFetch(url,init)){}
  getSnapshot=()=>this.snapshot;
  subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>this.listeners.delete(listener);};
  private update(changes:Partial<Snapshot>){this.snapshot={...this.snapshot,...changes};for(const listener of this.listeners)listener();}

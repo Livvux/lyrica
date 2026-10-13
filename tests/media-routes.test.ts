@@ -38,6 +38,7 @@ const request = (headers: HeadersInit = {}, method = "GET") => {const h=new Head
 test("audio route serves correct suffix bytes", async () => {
   const response = await audio.GET(request({ range: "bytes=-3" }), params("sample.mp3"));
   assert.equal(response.status, 206);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
   assert.equal(response.headers.get("content-type"), "audio/mpeg");
   assert.equal(await response.text(), "789");
 });

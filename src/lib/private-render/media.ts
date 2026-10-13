@@ -12,10 +12,11 @@ export class PrivateMedia {
   if(contentType==="image/svg+xml"||/\.svg$/i.test(filename))throw new Error("Für private Logos bitte PNG, JPEG oder WebP verwenden.");
   const storage=scope==="exports"?this.outputStorage:this.storage;
   const key=storage?`${scope}/${actor.ownerId}/${actor.projectId}/${filename}`:null;
-  const record=this.store.transaction(()=>{
+  let record:MediaRecord;
+  try{record=this.store.transaction(()=>{
    if(this.store.retainedMediaBytes()+info.size>MAX_RETAINED_BYTES)throw new Error("Privater Speicher voll.");
    return this.store.registerMedia(actor,{filename,contentType,size:info.size,objectKey:key});
-  });
+  });}catch(error){await rm(source,{force:true});throw error;}
   if(key&&storage)try{await storage.put(key,await readFile(source),contentType);}catch{
    try{await storage.delete(key);}catch{this.store.markMediaCleanupPending(actor,filename);throw new Error("Upload und Bereinigung müssen geprüft werden.");}
    this.store.removeMedia(actor,filename);await rm(source,{force:true});throw new Error("Privater Upload fehlgeschlagen.");

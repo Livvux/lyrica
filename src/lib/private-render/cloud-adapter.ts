@@ -1,4 +1,4 @@
-import {S3Client,PutObjectCommand,GetObjectCommand,HeadObjectCommand,ListObjectsV2Command,DeleteObjectsCommand,DeleteObjectCommand} from "@aws-sdk/client-s3";
+import {S3Client,PutObjectCommand,GetObjectCommand,HeadObjectCommand,ListObjectsV2Command,DeleteObjectsCommand,DeleteObjectCommand,ListMultipartUploadsCommand,AbortMultipartUploadCommand} from "@aws-sdk/client-s3";
 import {STSClient,GetCallerIdentityCommand} from "@aws-sdk/client-sts";
 import {fromIni} from "@aws-sdk/credential-providers";
 import {getSignedUrl} from "@aws-sdk/s3-request-presigner";
@@ -12,6 +12,7 @@ import {getSettings,FUNCTION_NAME,type PrivateSettings} from "./settings";
 import {r2Client,signOutput} from "./r2";
 import {validateOwnedSources,resolveOwnedMedia} from "./owned-media";
 import {assetReferences} from "./sources";
+import {cleanupMultipartOutput} from "./multipart-cleanup";
 import {VideoConfigSchema} from "./schema";
 import type {CloudAdapter,CloudJob} from "./cloud-jobs";
 import type {VideoConfig} from "../../types/lyrics";
@@ -88,10 +89,17 @@ export function productionCloudAdapter():CloudAdapter {
   },
   cancel:async job=>{await awsCredentials(settings);if(!job.renderId)throw new Error("Missing render ID");await cancelRenderOnLambda({region:REGION,bucketName:renderBucket,renderId:job.renderId});},
   cleanup:async job=>{
+   // An error signal can precede the last function exit. Keep quota/objects until
+   // the reviewed120s function +60s async age (no retries) cannot write again.
+   if(job.state!=="succeeded"&&job.attemptConsumed&&Date.now()<job.invokedAt+360000)throw new Error("Cleanup waits for bounded worker exit");
    const client=await s3();
    const prefixes=[{Bucket:inputBucket,Prefix:`jobs/${job.id}/`},...(job.renderId?[{Bucket:renderBucket,Prefix:`renders/${job.renderId}/`}]:[])];
    for(const scope of prefixes){let cursor:string|undefined;do{const objects=await client.send(new ListObjectsV2Command({...scope,ContinuationToken:cursor}));const keys=objects.Contents?.map(object=>({Key:object.Key!})).filter(object=>object.Key.startsWith(scope.Prefix))??[];if(keys.length){const removed=await client.send(new DeleteObjectsCommand({Bucket:scope.Bucket,Delete:{Objects:keys,Quiet:true}}));if(removed.Errors?.length)throw new Error("Cleanup pending");}cursor=objects.NextContinuationToken;}while(cursor);}
-   if(job.state!=="succeeded")await output.send(new DeleteObjectCommand({Bucket:r2.outputBucket,Key:outputKey(job)}));
+   if(job.state!=="succeeded")await cleanupMultipartOutput(outputKey(job),{
+    list:async(Prefix,cursor)=>{const markers=cursor?JSON.parse(cursor) as {KeyMarker:string;UploadIdMarker:string}:{};const result=await output.send(new ListMultipartUploadsCommand({Bucket:r2.outputBucket,Prefix,...markers}));if(result.IsTruncated&&!result.NextKeyMarker)throw new Error("Multipart cleanup pagination uncertain");return {uploads:result.Uploads?.filter(upload=>upload.Key&&upload.UploadId).map(upload=>({key:upload.Key!,id:upload.UploadId!}))??[],next:result.IsTruncated?JSON.stringify({KeyMarker:result.NextKeyMarker,UploadIdMarker:result.NextUploadIdMarker}):undefined};},
+    abort:async(Key,UploadId)=>{await output.send(new AbortMultipartUploadCommand({Bucket:r2.outputBucket,Key,UploadId}));},
+    delete:async(Key)=>{await output.send(new DeleteObjectCommand({Bucket:r2.outputBucket,Key}));},
+   });
   },
   download:async job=>signOutput(outputKey(job)),
  };

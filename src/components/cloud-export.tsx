@@ -1,4 +1,5 @@
 "use client";
+import {privateFetch as fetch,boundMediaUrl} from "@/lib/private-fetch";
 import {useEffect,useState,useSyncExternalStore} from "react";
 import type {VideoConfig} from "@/types/lyrics";
 import {CloudExportClient,cloudActive} from "@/lib/cloud-export-client";
@@ -18,7 +19,7 @@ export function CloudExport({config}:{config:VideoConfig}){
    {job.cleanupPending&&<p className="text-xs text-white/50">Temporäre Daten werden noch bereinigt.</p>}
   </div>}
   {active&&job&&job.state!=="needs-attention"&&<button disabled={Boolean(state.pending)||job.state==="cancelling"} onClick={()=>void client.cancel()} className="rounded-lg border border-white/20 px-4 py-2 text-sm disabled:opacity-40">{job.state==="cancelling"?"Abbruch wird bestätigt…":"Cloud-Export abbrechen"}</button>}
-  {job?.downloadReady&&<button disabled={Boolean(state.pending)} onClick={()=>void client.downloadPath().then(url=>{if(url){const a=document.createElement("a");a.href=url;a.download="lyrica-720p.mp4";a.rel="noreferrer";a.click();}})} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black">Privates Video herunterladen</button>}
+  {job?.downloadReady&&<button disabled={Boolean(state.pending)} onClick={()=>void client.downloadPath().then(url=>{if(url){const a=document.createElement("a");a.href=boundMediaUrl(url);a.download="lyrica-720p.mp4";a.rel="noreferrer";a.click();}})} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black">Privates Video herunterladen</button>}
   {!active&&!job?.downloadReady&&<button disabled={!ready||remaining<1||tooLong||Boolean(state.pending)} onClick={()=>void client.start({...config,renderQuality:"fast"} as unknown as Record<string,unknown>)} className="rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black disabled:opacity-40">{state.pending==="start"?"Auftrag speichern…":"In der Cloud exportieren"}</button>}
   {state.error&&<p role="alert" className="text-sm text-red-300">{state.error}</p>}
  </div>;

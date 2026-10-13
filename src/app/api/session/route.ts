@@ -12,7 +12,7 @@ export async function GET(request:Request) {
   if(owner)after(()=>getMedia().retryPendingCleanup());
   if(!owner) return Response.json({authenticated:false,configured:Boolean(settings.passwordHash),cloudReady:false},{headers});
   const actor=requireActor(request);
-  return Response.json({authenticated:true,configured:true,...actor,projects:getStore().projects(owner),cloudReady:settings.cloudEnabled,cloudMaxSeconds:30,cloudMaxStarts:getStore().cloudStartsRemaining()},{headers});
+  return Response.json({authenticated:true,configured:true,desktop:Boolean(process.env.LYRICA_TOKEN),...actor,projects:getStore().projects(owner),cloudReady:settings.cloudEnabled,cloudMaxSeconds:30,cloudMaxStarts:getStore().cloudStartsRemaining()},{headers});
  } catch(error){return privateFailure(error);}
 }
 export async function POST(request:Request) {

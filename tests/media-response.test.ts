@@ -29,7 +29,7 @@ test("full response has correct bytes and cache/size headers", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-length"), "10");
   assert.equal(response.headers.get("accept-ranges"), "bytes");
-  assert.equal(response.headers.get("cache-control"), "private, max-age=3600");
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(await response.text(), contents);
 });

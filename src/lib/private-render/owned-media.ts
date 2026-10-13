@@ -20,6 +20,8 @@ export function ownedAssetFilename(url:string):string {try{return assetFilename(
 export async function validateOwnedSources(actor:Actor,config:VideoConfig):Promise<void> {
  let refs;try{refs=assetReferences(config);}catch{throw new PrivateError(400,"Nur private Projektmedien sind erlaubt.");}
  for(const ref of refs){
+  const sourceUrl=ref.role==="audio"?config.audioUrl:ref.role==="background"?config.style.bgImage:config.style.customLogo!;
+  const bound=new URL(sourceUrl,"http://private.local").searchParams.get("projectId");if(bound&&bound!==actor.projectId)throw new PrivateError(404,"Nicht gefunden.");
   const media=getStore().media(actor,ref.filename);if(!media)throw new PrivateError(404,"Nicht gefunden.");
   const valid=ref.role==="audio"?media.contentType.startsWith("audio/"):ref.role==="logo"?media.contentType.startsWith("image/"):media.contentType.startsWith(config.style.bgType==="video"?"video/":"image/");
   if(!valid)throw new PrivateError(400,"Ungültiger Medientyp.");await resolveOwnedMedia(actor,ref.filename);

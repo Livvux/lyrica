@@ -1,4 +1,5 @@
 "use client";
+import {privateFetch as fetch} from "@/lib/private-fetch";
 
 import { useState, useCallback, useEffect, useMemo, useDeferredValue, useRef } from "react";
 import { UploadForm } from "@/components/upload-form";
@@ -102,7 +103,7 @@ function LyricaEditor() {
     setIsTranscribing(true);
     setTranscribeError(null);
     try {
-      const audioFilename = audioUrl.split("/").pop();
+      const audioFilename = new URL(audioUrl,"http://private.local").pathname.split("/").pop();
       if (!audioFilename) {
         setTranscribeError("Ungültige Audio-URL.");
         return;
@@ -177,7 +178,7 @@ function LyricaEditor() {
 
   async function handleActivateMix() {
     if (!audioUrl) return;
-    const audioFilename = audioUrl.split("/").pop();
+    const audioFilename = new URL(audioUrl,"http://private.local").pathname.split("/").pop();
     if (!audioFilename) return;
 
     setIsTranscribing(true);
@@ -365,7 +366,7 @@ function LyricaEditor() {
             />
           ) : showMixPanel && !lyricsActive ? (
             <MixTracklistPanel
-              audioFilename={audioUrl!.split("/").pop()!}
+              audioFilename={new URL(audioUrl!,"http://private.local").pathname.split("/").pop()!}
               onConfirm={handleMixConfirm}
               onSkip={handleMixSkip}
             />

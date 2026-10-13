@@ -34,8 +34,9 @@ export class PrivateStore {
       progress REAL NOT NULL DEFAULT 0,error_code TEXT,output_bytes INTEGER NOT NULL DEFAULT 0,reserved_bytes INTEGER NOT NULL DEFAULT 0,
       cleanup_pending INTEGER NOT NULL DEFAULT 0,slot_reserved INTEGER NOT NULL DEFAULT 1,attempt_consumed INTEGER NOT NULL DEFAULT 0,
       cancel_requested INTEGER NOT NULL DEFAULT 0,cancel_sent INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,UNIQUE(owner_id,project_id,request_key));
+      invoked_at INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,UNIQUE(owner_id,project_id,request_key));
       CREATE UNIQUE INDEX IF NOT EXISTS cloud_exclusive_slot ON cloud_jobs(slot_reserved) WHERE slot_reserved=1;`);
+    if(!this.db.prepare("PRAGMA table_info(cloud_jobs)").all().some(row=>row.name==="invoked_at"))this.db.exec("ALTER TABLE cloud_jobs ADD COLUMN invoked_at INTEGER NOT NULL DEFAULT 0");
     if(!this.db.prepare("PRAGMA table_info(media)").all().some(row=>row.name==="state"))this.db.exec("ALTER TABLE media ADD COLUMN state TEXT NOT NULL DEFAULT 'ready'");
   }
   close() { this.db.close(); }
