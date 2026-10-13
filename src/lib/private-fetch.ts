@@ -6,10 +6,11 @@ export function currentProject():string|null {
 }
 export function bindProject(ownerId:string,projectId:string){sessionStorage.setItem("lyrica-private-project",`${ownerId}:${projectId}`);}
 export function boundRequest(url:string,init:RequestInit={},projectId:string|null=currentProject()):RequestInit {
- const headers=new Headers(init.headers);if(url.startsWith("/api/")&&projectId)headers.set("x-lyrica-project",projectId);
+ const headers=new Headers(init.headers);if(url.startsWith("/api/")&&projectId&&!headers.has("x-lyrica-project"))headers.set("x-lyrica-project",projectId);
  return {...init,headers};
 }
 export function boundMediaUrl(url:string,projectId:string|null=currentProject()):string {
  if(!url.startsWith("/api/")||!projectId)return url;return `${url}${url.includes("?")?"&":"?"}projectId=${encodeURIComponent(projectId)}`;
 }
 export function privateFetch(url:string,init?:RequestInit):Promise<Response>{return fetch(url,boundRequest(url,init));}
+export function createPrivateApi(scope:string){const projectId=scope.split(":").at(-1)!;return {persistenceScope:scope,fetch:(url:string,init?:RequestInit)=>fetch(url,boundRequest(url,init,projectId)),mediaUrl:(url:string)=>boundMediaUrl(url,projectId)};}

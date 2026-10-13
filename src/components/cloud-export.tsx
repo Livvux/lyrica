@@ -1,13 +1,14 @@
 "use client";
-import {privateFetch as fetch,boundMediaUrl} from "@/lib/private-fetch";
+import {usePrivateApi} from "@/components/private-project-context";
 import {useEffect,useState,useSyncExternalStore} from "react";
 import type {VideoConfig} from "@/types/lyrics";
 import {CloudExportClient,cloudActive} from "@/lib/cloud-export-client";
 const labels={queued:"Auftrag gespeichert",preparing:"Private Medien vorbereiten",starting:"Cloud-Start wird bestätigt",rendering:"Cloud rendert",cancelling:"Abbruch angefordert – Bestätigung ausstehend",succeeded:"Video bereit",failed:"Export fehlgeschlagen",cancelled:"Abbruch bestätigt", "needs-attention":"Start unklar – manuelle Prüfung nötig"};
 export function CloudExport({config}:{config:VideoConfig}){
- const [client]=useState(()=>new CloudExportClient());const state=useSyncExternalStore(client.subscribe,client.getSnapshot,client.getSnapshot);
+ const {fetch,mediaUrl:boundMediaUrl}=usePrivateApi();
+ const [client]=useState(()=>new CloudExportClient(fetch));const state=useSyncExternalStore(client.subscribe,client.getSnapshot,client.getSnapshot);
  const [ready,setReady]=useState(false),[checked,setChecked]=useState(false),[remaining,setRemaining]=useState(0);
- useEffect(()=>{let alive=true;void fetch("/api/session",{cache:"no-store"}).then(response=>response.json()).then(body=>{if(alive){setReady(body.cloudReady===true);setRemaining(body.cloudMaxStarts??0);setChecked(true);}}).catch(()=>{if(alive)setChecked(true);});void client.refresh();const timer=setInterval(()=>void client.refresh(),3000);return()=>{alive=false;clearInterval(timer);};},[client]);
+ useEffect(()=>{let alive=true;void fetch("/api/session",{cache:"no-store"}).then(response=>response.json()).then(body=>{if(alive){setReady(body.cloudReady===true);setRemaining(body.cloudMaxStarts??0);setChecked(true);}}).catch(()=>{if(alive)setChecked(true);});void client.refresh();const timer=setInterval(()=>void client.refresh(),3000);return()=>{alive=false;clearInterval(timer);};},[client,fetch]);
  const seconds=config.durationInFrames/config.fps,tooLong=seconds>30;
  const job=state.job,active=cloudActive(job);
  return <div className="flex flex-col gap-3 rounded-xl border border-white/15 p-3">

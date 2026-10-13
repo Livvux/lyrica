@@ -10,7 +10,7 @@ import {validMediaHeader} from "./media-header";
 export function getMedia():PrivateMedia {return new PrivateMedia(getStore(),path.join(process.cwd(),"tmp","lyrica"),mediaStorage(),mediaStorage(true));}
 export async function registerOwnedMedia(actor:Actor,filename:string,contentType:string,maximumBytes:number,scope:"media"|"exports"="media"){
  const source=path.join(process.cwd(),"tmp","lyrica",ownedAssetFilename(`/api/audio/${filename}`));
- const metadata=await lstat(source);if(!metadata.isFile()||metadata.isSymbolicLink()||metadata.size>maximumBytes)throw new PrivateError(400,"Ungültige Mediendatei.");
+ const metadata=await lstat(source);if(!metadata.isFile()||metadata.isSymbolicLink()||metadata.size>maximumBytes){if(metadata.isFile()&&!metadata.isSymbolicLink())await rm(source,{force:true});throw new PrivateError(400,"Ungültige Mediendatei.");}
  const handle=await open(source,"r");let bytes:Buffer;try{bytes=Buffer.alloc(32);const read=await handle.read(bytes,0,32,0);bytes=bytes.subarray(0,read.bytesRead);}finally{await handle.close();}
  if(!validMediaHeader(bytes,contentType)){await rm(source,{force:true});throw new PrivateError(400,"Dateiinhalt passt nicht zum Medientyp.");}
  return getMedia().register(actor,filename,contentType,maximumBytes,scope);

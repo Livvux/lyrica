@@ -1,5 +1,5 @@
 "use client";
-import {privateFetch as fetch} from "@/lib/private-fetch";
+import {usePrivateApi} from "@/components/private-project-context";
 
 import {CloudExport} from "./cloud-export";
 import { useState, useRef, useEffect } from "react";
@@ -81,6 +81,7 @@ export function ExportButton({config}:ExportButtonProps){
 }
 
 function LocalExportButton({ config }: ExportButtonProps) {
+ const {fetch}=usePrivateApi();
   const [profile, setProfile] = useState<RenderQuality>("balanced");
   const [state, setState] = useState<RenderState>({ status: "idle" });
   const [logs, setLogs] = useState<string[]>([]);

@@ -8,7 +8,7 @@ export class PrivateMedia {
  private filename(name:string):string {if(!/^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$/.test(name))throw new Error("Nicht gefunden.");return path.join(this.cache,name);}
  async register(actor:Actor,filename:string,contentType:string,maximumBytes=100*1024*1024,scope:"media"|"exports"="media"):Promise<MediaRecord> {
   const source=this.filename(filename);const info=await lstat(source);
-  if(!info.isFile()||info.isSymbolicLink()||info.size<=0||info.size>maximumBytes)throw new Error("Ungültige Mediendatei.");
+  if(!info.isFile()||info.isSymbolicLink()||info.size<=0||info.size>maximumBytes){if(info.isFile()&&!info.isSymbolicLink())await rm(source,{force:true});throw new Error("Ungültige Mediendatei.");}
   if(contentType==="image/svg+xml"||/\.svg$/i.test(filename))throw new Error("Für private Logos bitte PNG, JPEG oder WebP verwenden.");
   const storage=scope==="exports"?this.outputStorage:this.storage;
   const key=storage?`${scope}/${actor.ownerId}/${actor.projectId}/${filename}`:null;

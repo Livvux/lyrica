@@ -1,5 +1,5 @@
 "use client";
-import {privateFetch as fetch,boundMediaUrl} from "@/lib/private-fetch";
+import {usePrivateApi} from "@/components/private-project-context";
 
 import { useState, useRef } from "react";
 
@@ -28,6 +28,7 @@ function getAudioDuration(file: File): Promise<number> {
 }
 
 export function UploadForm({ onAudioUploaded }: UploadFormProps) {
+ const {fetch,mediaUrl:boundMediaUrl}=usePrivateApi();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);

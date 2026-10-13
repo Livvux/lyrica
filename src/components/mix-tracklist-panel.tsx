@@ -1,5 +1,5 @@
 "use client";
-import {privateFetch as fetch} from "@/lib/private-fetch";
+import {usePrivateApi} from "@/components/private-project-context";
 
 import { useState, useEffect } from "react";
 import type { MixTrack } from "@/types/lyrics";
@@ -15,6 +15,7 @@ export function MixTracklistPanel({
   onConfirm,
   onSkip,
 }: MixTracklistPanelProps) {
+ const {fetch}=usePrivateApi();
   const [scanning, setScanning] = useState(true);
   const [tracks, setTracks] = useState<MixTrack[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -47,7 +48,7 @@ export function MixTracklistPanel({
     return () => {
       cancelled = true;
     };
-  }, [audioFilename]);
+  }, [audioFilename,fetch]);
 
   function updateTrack(index: number, field: "artist" | "title", value: string) {
     setTracks((prev) =>

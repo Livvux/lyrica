@@ -26,6 +26,7 @@ test("media registration rejects symlinks, traversal and oversized real files",a
  await assert.rejects(media.register(actor,"../secret.wav","audio/wav"));
  writeFileSync(path.join(cache,"too-big.wav"),"oversized");
  await assert.rejects(media.register(actor,"too-big.wav","audio/wav",4));
+  assert.equal(existsSync(path.join(cache,"too-big.wav")),false);
 });
 test("failed archive compensates its own object and never leaves a downloadable record",async()=>{
  const failed=new PrivateMedia(store,cache,{...storage,put:async(key,bytes)=>{remote.set(key,bytes);throw new Error("simulated timeout");}});

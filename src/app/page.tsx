@@ -1,5 +1,5 @@
 "use client";
-import {privateFetch as fetch} from "@/lib/private-fetch";
+import {usePrivateApi} from "@/components/private-project-context";
 
 import { useState, useCallback, useEffect, useMemo, useDeferredValue, useRef } from "react";
 import { UploadForm } from "@/components/upload-form";
@@ -25,6 +25,7 @@ type ValidationPhase = "idle" | "identifying" | "fetching" | "validating" | "don
 export default function Home() { return <PrivateAccess><LyricaEditor /></PrivateAccess>; }
 
 function LyricaEditor() {
+  const {fetch,persistenceScope}=usePrivateApi();
   const linesHistory = useHistory<LyricLine[]>([]);
   const lines = linesHistory.value;
   const setLines = linesHistory.set;
@@ -44,7 +45,7 @@ function LyricaEditor() {
 
   // Restore from localStorage on mount
   useEffect(() => {
-    const saved = loadPersistence();
+    const saved = loadPersistence(persistenceScope);
     if (saved) {
       if (saved.audioUrl) setAudioUrl(saved.audioUrl);
       if (saved.durationSec) setDurationSec(saved.durationSec);
@@ -59,10 +60,10 @@ function LyricaEditor() {
   useEffect(() => {
     if (!hydrated) return;
     const timer = window.setTimeout(() => {
-      savePersistence({ lines, audioUrl, durationSec, style, lyricsActive });
+      savePersistence({ lines, audioUrl, durationSec, style, lyricsActive },persistenceScope);
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [lines, audioUrl, durationSec, style, lyricsActive, hydrated]);
+  }, [lines, audioUrl, durationSec, style, lyricsActive, hydrated,persistenceScope]);
 
   // Undo/Redo keyboard shortcuts
   useEffect(() => {
