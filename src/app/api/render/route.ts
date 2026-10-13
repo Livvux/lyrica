@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         if (request.signal.aborted) {
           renderPerf({ status: 499, reason: "client-aborted" });
         } else {
-          console.error("[render] Private failure callsites",privateDiagnostic(e));
+          console.error("[render] Private failure class",privateDiagnostic(e));
           send({ phase: "log", message: "FEHLER: Privater Export fehlgeschlagen." });
           send({ phase: "error", error: "Fehler beim Rendern des Videos." });
           renderPerf({ status: 500, reason:"render-failed" });
