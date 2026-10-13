@@ -14,13 +14,16 @@ import { validateLines } from "@/lib/lyrics-validation";
 import { useHistory } from "@/lib/use-history";
 import { savePersistence, loadPersistence } from "@/lib/use-persistence";
 import { DEFAULT_STYLE } from "@/types/lyrics";
+import { PrivateAccess } from "@/components/private-access";
 import type { LyricLine, VideoConfig, StyleConfig, ValidationResult, SongMatch, ReferenceLyrics, MixTrack, LineValidation } from "@/types/lyrics";
 
 const PreviewPlayer = dynamic(() => import("@/components/preview-player").then((module) => module.PreviewPlayer), { ssr: false });
 
 type ValidationPhase = "idle" | "identifying" | "fetching" | "validating" | "done";
 
-export default function Home() {
+export default function Home() { return <PrivateAccess><LyricaEditor /></PrivateAccess>; }
+
+function LyricaEditor() {
   const linesHistory = useHistory<LyricLine[]>([]);
   const lines = linesHistory.value;
   const setLines = linesHistory.set;

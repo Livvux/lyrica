@@ -7,6 +7,7 @@ import { promisify } from "util";
 import { bundle } from "@remotion/bundler";
 import type { WebpackConfiguration } from "@remotion/bundler";
 import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
+import {servePrivateBundle} from "./private-render/bundle-server";
 import { availableRenderCpus, chooseRenderConcurrency } from "./render-resources";
 import { sanitizeFilename } from "@/lib/sanitize-filename";
 import type { VideoConfig } from "@/types/lyrics";
@@ -233,6 +234,7 @@ export async function renderVideo(
   const publicDir = path.join(process.cwd(), "public");
   const tmpDir = path.join(process.cwd(), "tmp", "lyrica");
   let bundleAssetDir: string | null = null;
+  let privateServer:Awaited<ReturnType<typeof servePrivateBundle>>|null=null;
 
   const profileKey: RenderProfile = config.renderQuality ?? "balanced";
   const profile = PROFILES[profileKey];
@@ -339,15 +341,19 @@ export async function renderVideo(
       durationInFrames: renderFrameCount,
     };
 
+    privateServer=await servePrivateBundle(bundleLocation);
+    const assetUrl=(src:string)=>src.startsWith("/")?new URL(src.slice(1),privateServer!.url).href:src;
+    renderConfig={...renderConfig,audioUrl:assetUrl(renderConfig.audioUrl),style:{...renderConfig.style,bgImage:assetUrl(renderConfig.style.bgImage),customLogo:renderConfig.style.customLogo?assetUrl(renderConfig.style.customLogo):null}};
     const inputProps = renderConfig as unknown as Record<string, unknown>;
     const browserExecutable = resolveBrowserExecutable(log);
 
     log("Composition wird ermittelt…");
     const composition = await selectComposition({
-      serveUrl: bundleLocation,
+      serveUrl: privateServer.url,
       id: "LyricsVideo",
       inputProps,
       browserExecutable,
+      logLevel:"error",
     });
     log(`Composition: ${composition.width}x${composition.height}, ${composition.durationInFrames} Frames`);
 
@@ -387,12 +393,13 @@ export async function renderVideo(
     await renderMedia({
       cancelSignal,
       composition,
-      serveUrl: bundleLocation,
+      serveUrl: privateServer.url,
       codec: "h264",
       outputLocation: outputPath,
       inputProps,
       concurrency,
       browserExecutable,
+      logLevel:"error",
       hardwareAcceleration: "if-possible",
       timeoutInMilliseconds: 300_000,
       videoBitrate: profile.videoBitrate,
@@ -485,6 +492,7 @@ export async function renderVideo(
     return outputPath;
   } finally {
     renderInProgress = false;
+    await privateServer?.close().catch(()=>{});
     if (bundleAssetDir) {
       await rm(bundleAssetDir, { recursive: true, force: true }).catch(() => {});
     }

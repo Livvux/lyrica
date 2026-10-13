@@ -1,3 +1,6 @@
+import {requireActor,privateFailure} from "@/lib/private-render/server";
+import {registerOwnedMedia} from "@/lib/private-render/owned-media";
+import {privateFormData} from "@/lib/private-render/body";
 import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
@@ -9,6 +12,7 @@ import { startServerPerf } from "@/lib/perf";
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function POST(request: Request) {
+  let actor; try {actor=requireActor(request,true);} catch(error){return privateFailure(error);}
   const perf = startServerPerf("api.upload-bg");
   const clientIp = getClientIp(request);
   const limited = rateLimit("upload-bg", { windowMs: 60_000, max: 10, clientKey: clientIp });
@@ -17,7 +21,7 @@ export async function POST(request: Request) {
     return limited;
   }
   try {
-    const formData = await request.formData();
+    const formData = await privateFormData(request,50*1024*1024);
     const file = formData.get("image") as File | null;
 
     if (!file) {
@@ -55,6 +59,7 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(filePath, buffer);
+    await registerOwnedMedia(actor,filename,file.type || "application/octet-stream",50*1024*1024);
 
     perf({
       status: 200,

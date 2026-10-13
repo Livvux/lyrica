@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     "@remotion/bundler",
     "@remotion/renderer",
     "@remotion/cli",
+    "@remotion/lambda",
     "esbuild",
   ],
   experimental: {
@@ -22,6 +23,8 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: [
+          {key:"Referrer-Policy",value:"no-referrer"},
+          {key:"X-Content-Type-Options",value:"nosniff"},
           {
             key: "Cross-Origin-Embedder-Policy",
             value: "credentialless",

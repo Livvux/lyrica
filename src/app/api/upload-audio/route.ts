@@ -1,3 +1,6 @@
+import {requireActor,privateFailure} from "@/lib/private-render/server";
+import {registerOwnedMedia} from "@/lib/private-render/owned-media";
+import {privateFormData} from "@/lib/private-render/body";
 import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
@@ -11,6 +14,7 @@ const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 const MAX_AUDIO_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 export async function POST(request: Request) {
+  let actor; try {actor=requireActor(request,true);} catch(error){return privateFailure(error);}
   const perf = startServerPerf("api.upload-audio");
   const clientIp = getClientIp(request);
   const limited = rateLimit("upload-audio", { windowMs: 60_000, max: 10, clientKey: clientIp });
@@ -23,7 +27,7 @@ export async function POST(request: Request) {
   cleanupTmpFiles();
 
   try {
-    const formData = await request.formData();
+    const formData = await privateFormData(request,100*1024*1024);
     const file = formData.get("audio") as File | null;
 
     if (!file) {
@@ -64,6 +68,7 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(filePath, buffer);
+    await registerOwnedMedia(actor,filename,file.type || "application/octet-stream",100*1024*1024);
 
     perf({
       status: 200,
@@ -73,7 +78,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ audioFilename: filename });
   } catch (e) {
-    console.error("Upload error:", e);
+    void e;
     perf({ status: 500, clientIp });
     return NextResponse.json(
       { error: "Fehler beim Hochladen. Bitte erneut versuchen." },

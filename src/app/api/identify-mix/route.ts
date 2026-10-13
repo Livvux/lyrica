@@ -1,3 +1,5 @@
+import {requireActor,privateFailure} from "@/lib/private-render/server";
+import {resolveOwnedMedia} from "@/lib/private-render/owned-media";
 import { NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { join } from "path";
@@ -126,6 +128,7 @@ function clusterSamples(samples: SampleResult[], audioDuration: number): MixTrac
 }
 
 export async function POST(req: Request) {
+  let actor; try {actor=requireActor(req,true);} catch(error){return privateFailure(error);}
   const apiKey = process.env.ACOUSTID_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -147,7 +150,7 @@ export async function POST(req: Request) {
   }
 
   const safe = sanitizeFilename(audioFilename);
-  const audioPath = join(TMP_DIR, safe);
+  let audioPath:string;try {audioPath=await resolveOwnedMedia(actor,safe);} catch(error){return privateFailure(error);}
   try {
     await stat(audioPath);
   } catch {
