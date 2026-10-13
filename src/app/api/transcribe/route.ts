@@ -1,3 +1,6 @@
+import {requireActor,privateFailure} from "@/lib/private-render/server";
+import {registerOwnedMedia,resolveOwnedMedia} from "@/lib/private-render/owned-media";
+import {privateFormData} from "@/lib/private-render/body";
 import { NextResponse } from "next/server";
 import { writeFile, mkdir, readFile, stat } from "fs/promises";
 import { createReadStream } from "fs";
@@ -59,6 +62,7 @@ async function transcribeWithCache(
 }
 
 export async function POST(request: Request) {
+  let actor; try {actor=requireActor(request,true);} catch(error){return privateFailure(error);}
   const perf = startServerPerf("api.transcribe");
   const clientIp = getClientIp(request);
   const limited = rateLimit("transcribe", { windowMs: 60_000, max: 5, clientKey: clientIp });
@@ -68,13 +72,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const formData = await request.formData();
+    const formData = await privateFormData(request,100*1024*1024);
 
     // Mode 1: Transcribe an already-uploaded file by filename
     const existingFilename = formData.get("audioFilename") as string | null;
     if (existingFilename) {
       const safeName = path.basename(existingFilename);
-      const filePath = path.join(TMP_DIR, safeName);
+      const filePath = await resolveOwnedMedia(actor,safeName);
       const fileStat = await stat(filePath);
       const hash = await hashFilePath(filePath);
       const ext = path.extname(safeName).toLowerCase();
@@ -140,12 +144,14 @@ export async function POST(request: Request) {
     }
 
     await mkdir(TMP_DIR, { recursive: true });
-    const ext = path.extname(file.name) || ".mp3";
+    const ext = path.extname(file.name).toLowerCase() || ".mp3";
+    if(!new Set([".mp3",".wav",".m4a",".aac",".ogg",".flac",".webm",".mp4"]).has(ext)||!file.type.startsWith("audio/"))return NextResponse.json({error:"Nur Audiodateien erlaubt."},{status:400});
     const filename = `${randomUUID()}${ext}`;
     const filePath = path.join(TMP_DIR, filename);
 
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     await writeFile(filePath, fileBuffer);
+    await registerOwnedMedia(actor,filename,file.type || "application/octet-stream",100*1024*1024);
 
     const hash = hashBuffer(fileBuffer);
     const { result, cacheHit } = await transcribeWithCache(hash, async () => {
@@ -179,7 +185,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ result, audioFilename: filename });
   } catch (e) {
-    console.error("Transcription error:", e);
+    void e;
     perf({ status: 500, clientIp });
     return NextResponse.json(
       { error: "Fehler bei der Transkription. Bitte erneut versuchen." },

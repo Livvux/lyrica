@@ -1,3 +1,6 @@
+import {requireActor,privateFailure} from "@/lib/private-render/server";
+import {registerOwnedMedia} from "@/lib/private-render/owned-media";
+import {privateFormData} from "@/lib/private-render/body";
 import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
@@ -9,6 +12,7 @@ import { startServerPerf } from "@/lib/perf";
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function POST(request: Request) {
+  let actor; try {actor=requireActor(request,true);} catch(error){return privateFailure(error);}
   const perf = startServerPerf("api.upload-logo");
   const clientIp = getClientIp(request);
   const limited = rateLimit("upload-logo", { windowMs: 60_000, max: 10, clientKey: clientIp });
@@ -17,7 +21,7 @@ export async function POST(request: Request) {
     return limited;
   }
   try {
-    const formData = await request.formData();
+    const formData = await privateFormData(request,5*1024*1024);
     const file = formData.get("logo") as File | null;
 
     if (!file) {
@@ -33,16 +37,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!file.type.startsWith("image/")) {
+    if (!file.type.startsWith("image/") || file.type === "image/svg+xml") {
       perf({ status: 400, reason: "invalid-type", clientIp, fileType: file.type });
       return NextResponse.json(
-        { error: "Nur Bilddateien erlaubt (PNG, SVG, JPG, WebP)." },
+        { error: "Nur PNG, JPG und WebP für private Logos erlaubt." },
         { status: 400 }
       );
     }
 
     await mkdir(TMP_DIR, { recursive: true });
-    const ALLOWED_EXTS = new Set([".png", ".svg", ".jpg", ".jpeg", ".webp", ".gif"]);
+    const ALLOWED_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
     const rawExt = path.extname(file.name).toLowerCase();
     const ext = ALLOWED_EXTS.has(rawExt) ? rawExt : ".png";
     const filename = `${randomUUID()}${ext}`;
@@ -50,6 +54,7 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(filePath, buffer);
+    await registerOwnedMedia(actor,filename,file.type || "application/octet-stream",5*1024*1024);
 
     perf({
       status: 200,

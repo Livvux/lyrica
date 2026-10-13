@@ -1,5 +1,7 @@
 "use client";
+import {usePrivateApi} from "@/components/private-project-context";
 
+import {CloudExport} from "./cloud-export";
 import { useState, useRef, useEffect } from "react";
 import type { VideoConfig, RenderQuality } from "@/types/lyrics";
 
@@ -73,7 +75,13 @@ function MeterBar({ value, max, color, label }: { value: number; max: number; co
   );
 }
 
-export function ExportButton({ config }: ExportButtonProps) {
+export function ExportButton({config}:ExportButtonProps){
+ const [backend,setBackend]=useState<"local"|"cloud">("local");
+ return <div className="flex flex-col gap-3"><div className="flex gap-2" role="group" aria-label="Export-Ort"><button onClick={()=>setBackend("local")} aria-pressed={backend==="local"} className="rounded-lg border border-white/20 px-4 py-2 text-sm">Lokal</button><button onClick={()=>setBackend("cloud")} aria-pressed={backend==="cloud"} className="rounded-lg border border-white/20 px-4 py-2 text-sm">Cloud</button></div><div hidden={backend!=="local"}><LocalExportButton config={config}/></div><div hidden={backend!=="cloud"}><CloudExport config={config}/></div></div>;
+}
+
+function LocalExportButton({ config }: ExportButtonProps) {
+ const {fetch}=usePrivateApi();
   const [profile, setProfile] = useState<RenderQuality>("balanced");
   const [state, setState] = useState<RenderState>({ status: "idle" });
   const [logs, setLogs] = useState<string[]>([]);
@@ -81,6 +89,7 @@ export function ExportButton({ config }: ExportButtonProps) {
   const [metrics, setMetrics] = useState<RenderMetrics | null>(null);
   const [summary, setSummary] = useState<RenderSummary | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const startingRef=useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -93,6 +102,7 @@ export function ExportButton({ config }: ExportButtonProps) {
   }
 
   async function handleExport() {
+    if(startingRef.current)return;startingRef.current=true;
     setLogs([]);
     setShowLogs(false);
     setMetrics(null);
@@ -170,6 +180,7 @@ export function ExportButton({ config }: ExportButtonProps) {
 
       setState({ status: "downloading" });
       const mp4 = await fetch(`/api/render/${downloadFilename}`);
+      if(!mp4.ok)throw new Error("Download fehlgeschlagen");
       const blob = await mp4.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -185,6 +196,7 @@ export function ExportButton({ config }: ExportButtonProps) {
       }
       setState({ status: "error", message: "Fehler beim Exportieren." });
     } finally {
+      startingRef.current=false;
       abortControllerRef.current = null;
       setState((prev) => (prev.status === "error" ? prev : { status: "idle" }));
     }

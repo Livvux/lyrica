@@ -1,8 +1,12 @@
-import { mkdir } from "fs/promises";
+import { mkdir,rm } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import * as z from "zod";
+import {VideoConfigSchema} from "@/lib/private-render/schema";
+import {requireActor,privateFailure} from "@/lib/private-render/server";
+import {registerOwnedMedia,validateOwnedSources} from "@/lib/private-render/owned-media";
+import {readBoundedBody} from "@/lib/private-render/body";
+import {privateDiagnostic} from "@/lib/private-render/diagnostics";
 import { renderVideo } from "@/lib/render-video";
 import { cleanupTmpFiles } from "@/lib/cleanup-tmp";
 import { rateLimit } from "@/lib/rate-limit";
@@ -15,63 +19,10 @@ export const runtime = "nodejs";
 
 installRenderSafetyNet();
 
-const MAX_DURATION_FRAMES = 30 * 60 * 120; // 120 Minuten @ 30fps
-
-const TranscriptionWordSchema = z.object({
-  word: z.string(),
-  startSec: z.number(),
-  endSec: z.number(),
-  confidence: z.number().optional(),
-});
-
-const LyricLineSchema = z.object({
-  text: z.string(),
-  startFrame: z.number().int(),
-  endFrame: z.number().int(),
-  startSec: z.number(),
-  endSec: z.number(),
-  words: z.array(TranscriptionWordSchema).optional(),
-});
-
-const WaveConfigSchema = z.object({
-  colors: z.tuple([z.string(), z.string(), z.string(), z.string(), z.string()]),
-  gain: z.number().min(100).max(500),
-  radius: z.number().min(80).max(250),
-  points: z.number().int().min(12).max(64),
-  spread: z.number().min(0.2).max(1),
-});
-
-const StyleConfigSchema = z.object({
-  fontSize: z.number().positive(),
-  fontFamily: z.string(),
-  textColor: z.string(),
-  bgImage: z.string(),
-  bgType: z.enum(["image", "video"]),
-  effectIntensity: z.enum(["off", "subtle", "strong"]),
-  beatReactive: z.boolean(),
-  animationVariant: z.enum(["fade-drift", "zoom", "slide-horizontal", "typewriter", "handwritten", "karaoke"]),
-  visualizerMode: z.enum(["none", "rainbow", "mono", "wave", "waves", "spectrum"]),
-  logoScale: z.number(),
-  customLogo: z.string().nullable(),
-  postEffect: z.enum(["none", "glitch", "vhs", "film-grain", "chromatic-aberration", "camera-shake"]),
-  showWatermark: z.boolean(),
-  waveConfig: WaveConfigSchema,
-});
-
-const VideoConfigSchema = z.object({
-  lines: z.array(LyricLineSchema),
-  audioUrl: z.string(),
-  style: StyleConfigSchema,
-  durationInFrames: z.number().int().positive().max(MAX_DURATION_FRAMES),
-  fps: z.number().int().positive(),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-  renderQuality: z.enum(["fast", "balanced", "quality"]).optional(),
-});
-
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function POST(request: Request) {
+  let actor;try{actor=requireActor(request,true);}catch(error){return privateFailure(error);}
   const parsePerf = startServerPerf("api.render.parse");
   const clientIp = getClientIp(request);
   const limited = rateLimit("render", { windowMs: 60_000, max: 3, clientKey: clientIp });
@@ -85,7 +36,7 @@ export async function POST(request: Request) {
 
   let raw: unknown;
   try {
-    raw = await request.json();
+    raw = JSON.parse((await readBoundedBody(request,2*1024*1024)).toString("utf8"));
   } catch {
     parsePerf({ status: 400, reason: "invalid-json", clientIp });
     return NextResponse.json({ error: "Ungültiges JSON." }, { status: 400 });
@@ -100,6 +51,7 @@ export async function POST(request: Request) {
     );
   }
   const config: VideoConfig = parsed.data;
+  try{await validateOwnedSources(actor,config);}catch(error){return privateFailure(error);}
 
   await mkdir(TMP_DIR, { recursive: true });
   const outputFilename = `${randomUUID()}.mp4`;
@@ -146,7 +98,7 @@ export async function POST(request: Request) {
             send({ phase: p.phase, progress: p.progress });
           },
           onLog: (message) => {
-            send({ phase: "log", message });
+            send({ phase: "log", message:message.replace(/https?:\/\/\S+/g,"[privater Renderpfad]") });
           },
           onMetrics: (m) => {
             send({ phase: "metrics", metrics: m });
@@ -156,17 +108,18 @@ export async function POST(request: Request) {
           },
         });
 
+        await registerOwnedMedia(actor,outputFilename,"video/mp4",512*1024*1024,"exports");
         send({ phase: "done", filename: outputFilename });
         renderPerf({ status: 200 });
       } catch (e) {
+        await rm(outputPath,{force:true}).catch(()=>{});
         if (request.signal.aborted) {
           renderPerf({ status: 499, reason: "client-aborted" });
         } else {
-          console.error("Render error:", e);
-          const errorMsg = e instanceof Error ? e.message : "Unbekannter Fehler";
-          send({ phase: "log", message: "FEHLER: Render fehlgeschlagen (Details im Server-Log)." });
+          console.error("[render] Private failure class",privateDiagnostic(e));
+          send({ phase: "log", message: "FEHLER: Privater Export fehlgeschlagen." });
           send({ phase: "error", error: "Fehler beim Rendern des Videos." });
-          renderPerf({ status: 500, error: errorMsg });
+          renderPerf({ status: 500, reason:"render-failed" });
         }
       } finally {
         request.signal.removeEventListener("abort", onAbort);
@@ -185,7 +138,7 @@ export async function POST(request: Request) {
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "private, no-store",
       Connection: "keep-alive",
     },
   });

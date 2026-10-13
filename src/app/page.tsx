@@ -1,4 +1,5 @@
 "use client";
+import {usePrivateApi} from "@/components/private-project-context";
 
 import { useState, useCallback, useEffect, useMemo, useDeferredValue, useRef } from "react";
 import { UploadForm } from "@/components/upload-form";
@@ -14,13 +15,17 @@ import { validateLines } from "@/lib/lyrics-validation";
 import { useHistory } from "@/lib/use-history";
 import { savePersistence, loadPersistence } from "@/lib/use-persistence";
 import { DEFAULT_STYLE } from "@/types/lyrics";
+import { PrivateAccess } from "@/components/private-access";
 import type { LyricLine, VideoConfig, StyleConfig, ValidationResult, SongMatch, ReferenceLyrics, MixTrack, LineValidation } from "@/types/lyrics";
 
 const PreviewPlayer = dynamic(() => import("@/components/preview-player").then((module) => module.PreviewPlayer), { ssr: false });
 
 type ValidationPhase = "idle" | "identifying" | "fetching" | "validating" | "done";
 
-export default function Home() {
+export default function Home() { return <PrivateAccess><LyricaEditor /></PrivateAccess>; }
+
+function LyricaEditor() {
+  const {fetch,persistenceScope}=usePrivateApi();
   const linesHistory = useHistory<LyricLine[]>([]);
   const lines = linesHistory.value;
   const setLines = linesHistory.set;
@@ -40,7 +45,7 @@ export default function Home() {
 
   // Restore from localStorage on mount
   useEffect(() => {
-    const saved = loadPersistence();
+    const saved = loadPersistence(persistenceScope);
     if (saved) {
       if (saved.audioUrl) setAudioUrl(saved.audioUrl);
       if (saved.durationSec) setDurationSec(saved.durationSec);
@@ -55,10 +60,10 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated) return;
     const timer = window.setTimeout(() => {
-      savePersistence({ lines, audioUrl, durationSec, style, lyricsActive });
+      savePersistence({ lines, audioUrl, durationSec, style, lyricsActive },persistenceScope);
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [lines, audioUrl, durationSec, style, lyricsActive, hydrated]);
+  }, [lines, audioUrl, durationSec, style, lyricsActive, hydrated,persistenceScope]);
 
   // Undo/Redo keyboard shortcuts
   useEffect(() => {
@@ -99,7 +104,7 @@ export default function Home() {
     setIsTranscribing(true);
     setTranscribeError(null);
     try {
-      const audioFilename = audioUrl.split("/").pop();
+      const audioFilename = new URL(audioUrl,"http://private.local").pathname.split("/").pop();
       if (!audioFilename) {
         setTranscribeError("Ungültige Audio-URL.");
         return;
@@ -174,7 +179,7 @@ export default function Home() {
 
   async function handleActivateMix() {
     if (!audioUrl) return;
-    const audioFilename = audioUrl.split("/").pop();
+    const audioFilename = new URL(audioUrl,"http://private.local").pathname.split("/").pop();
     if (!audioFilename) return;
 
     setIsTranscribing(true);
@@ -362,7 +367,7 @@ export default function Home() {
             />
           ) : showMixPanel && !lyricsActive ? (
             <MixTracklistPanel
-              audioFilename={audioUrl!.split("/").pop()!}
+              audioFilename={new URL(audioUrl!,"http://private.local").pathname.split("/").pop()!}
               onConfirm={handleMixConfirm}
               onSkip={handleMixSkip}
             />

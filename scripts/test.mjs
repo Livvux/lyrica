@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const output = mkdtempSync(path.join(tmpdir(), "lyrica-tests-"));
 
 function run(args) {
-  const result = spawnSync(process.execPath, args, { cwd: root, stdio: "inherit" });
+  const result = spawnSync(process.execPath, args, { cwd: root, stdio: "inherit", env: { ...process.env, NODE_PATH: path.join(root, "node_modules") } });
   if (result.error) throw result.error;
   return result.status ?? 1;
 }

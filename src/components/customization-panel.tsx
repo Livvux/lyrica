@@ -1,4 +1,5 @@
 "use client";
+import {usePrivateApi} from "@/components/private-project-context";
 
 import { useRef, useState, useEffect } from "react";
 import Image from "next/image";
@@ -61,6 +62,7 @@ const POST_EFFECT_OPTIONS: { value: PostEffect; label: string }[] = [
 ];
 
 export function CustomizationPanel({ style, onChange, lyricsActive }: CustomizationPanelProps) {
+ const {fetch,mediaUrl:boundMediaUrl}=usePrivateApi();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [fonts, setFonts] = useState<string[]>([]);
@@ -78,7 +80,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
       .catch(() => { if (!cancelled) setFonts(["Inter", "Arial", "Helvetica"]); })
       .finally(() => { if (!cancelled) setFontsLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [fetch]);
 
   function loadFonts() {
     setFontsLoading(true);
@@ -111,7 +113,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
         const data = await res.json();
         if (data.filename) {
           update({
-            bgImage: `/api/audio/${data.filename}`,
+            bgImage: boundMediaUrl(`/api/audio/${data.filename}`),
             bgType: isVideo ? "video" : "image",
           });
         }
@@ -137,7 +139,7 @@ export function CustomizationPanel({ style, onChange, lyricsActive }: Customizat
       }
       const data = await res.json();
       if (data.filename) {
-        update({ customLogo: `/api/audio/${data.filename}` });
+        update({ customLogo: boundMediaUrl(`/api/audio/${data.filename}`) });
       }
     } catch {
       setLogoError("Upload fehlgeschlagen.");

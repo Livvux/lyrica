@@ -15,7 +15,7 @@ export const Background: React.FC<{
   scale?: number;
   bgType?: BgType;
 }> = ({ src, brightness = 1, scale = 1, bgType }) => {
-  const resolvedSrc = src.startsWith("/") ? src : (src ? staticFile(src) : src);
+  const resolvedSrc = (src.startsWith("/") || /^https?:\/\//.test(src) || src.startsWith("blob:")) ? src : (src ? staticFile(src) : src);
   const isVideo = isVideoSrc(src, bgType);
   const { durationInFrames } = useVideoConfig();
 
