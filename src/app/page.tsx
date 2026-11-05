@@ -38,17 +38,25 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const previewUpdateMark = useRef(0);
 
-  // Restore from localStorage on mount
+  // Restore from localStorage after mount. Apply the snapshot in a microtask so
+  // setState is not synchronous inside the effect (react-hooks/set-state-in-effect).
   useEffect(() => {
-    const saved = loadPersistence();
-    if (saved) {
-      if (saved.audioUrl) setAudioUrl(saved.audioUrl);
-      if (saved.durationSec) setDurationSec(saved.durationSec);
-      if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style, waveConfig: { ...DEFAULT_STYLE.waveConfig, ...(saved.style.waveConfig ?? {}) } });
-      if (saved.lyricsActive) setLyricsActive(saved.lyricsActive);
-      if (saved.lines?.length) setLines(saved.lines);
-    }
-    setHydrated(true);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const saved = loadPersistence();
+      if (saved) {
+        if (saved.audioUrl) setAudioUrl(saved.audioUrl);
+        if (saved.durationSec) setDurationSec(saved.durationSec);
+        if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style, waveConfig: { ...DEFAULT_STYLE.waveConfig, ...(saved.style.waveConfig ?? {}) } });
+        if (saved.lyricsActive) setLyricsActive(saved.lyricsActive);
+        if (saved.lines?.length) setLines(saved.lines);
+      }
+      setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save to localStorage on every change
