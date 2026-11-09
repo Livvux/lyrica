@@ -2,17 +2,18 @@ import { NextResponse } from "next/server";
 import type { ReferenceLyrics, ReferenceLyricLine } from "@/types/lyrics";
 
 export async function POST(req: Request) {
-  let body: { artist?: string; title?: string; durationSec?: number };
+  let body: { artist?: unknown; title?: unknown; durationSec?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { artist, title, durationSec } = body;
-  if (!artist || !title) {
+  const { artist, title, durationSec: rawDuration } = body ?? {};
+  if (typeof artist !== "string" || typeof title !== "string" || !artist || !title) {
     return NextResponse.json({ error: "artist and title required" }, { status: 400 });
   }
+  const durationSec = typeof rawDuration === "number" && rawDuration > 0 ? rawDuration : undefined;
 
   // Try LRCLIB first (free, no auth, has synced lyrics)
   const lrcResult = await fetchFromLrclib(artist, title, durationSec);

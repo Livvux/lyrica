@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useId, useState } from "react";
 
 interface UploadFormProps {
   onAudioUploaded: (audioUrl: string, durationSec: number, originalFilename: string) => void;
+  /** Name of the loaded song; switches to the compact "replace" layout. */
+  current?: string | null;
 }
 
 function getAudioDuration(file: File): Promise<number> {
@@ -11,13 +13,12 @@ function getAudioDuration(file: File): Promise<number> {
     const url = URL.createObjectURL(file);
     const audio = new Audio(url);
     audio.addEventListener("loadedmetadata", () => {
-      const duration = audio.duration;
       URL.revokeObjectURL(url);
-      if (!isFinite(duration) || duration <= 0) {
+      if (!isFinite(audio.duration) || audio.duration <= 0) {
         reject(new Error("Audio-Dauer konnte nicht ermittelt werden."));
         return;
       }
-      resolve(duration);
+      resolve(audio.duration);
     });
     audio.addEventListener("error", () => {
       URL.revokeObjectURL(url);
@@ -26,166 +27,143 @@ function getAudioDuration(file: File): Promise<number> {
   });
 }
 
-export function UploadForm({ onAudioUploaded }: UploadFormProps) {
-  const [isLoading, setIsLoading] = useState(false);
+const ACCEPT = ".mp3,.mp4,.wav,.webm,.m4a,audio/*";
+
+export function UploadForm({ onAudioUploaded, current }: UploadFormProps) {
+  const [uploading, setUploading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
 
   async function uploadFile(file: File) {
     setError(null);
-    setIsLoading(true);
-    setFileName(file.name);
-
+    setUploading(file.name);
     try {
       const durationSec = await getAudioDuration(file);
-
       const formData = new FormData();
       formData.append("audio", file);
-
-      const response = await fetch("/api/upload-audio", {
-        method: "POST",
-        body: formData,
-      });
-
+      const response = await fetch("/api/upload-audio", { method: "POST", body: formData });
       const data = await response.json();
-
       if (!response.ok || data.error) {
         setError(data.error ?? "Fehler beim Hochladen.");
         return;
       }
-
       if (data.audioFilename) {
         onAudioUploaded(`/api/audio/${data.audioFilename}`, durationSec, file.name);
       }
-    } catch {
-      setError("Ein unerwarteter Fehler ist aufgetreten.");
+    } catch (e) {
+      setError(e instanceof Error && e.message.startsWith("Audio") ? e.message : "Hochladen fehlgeschlagen.");
     } finally {
-      setIsLoading(false);
+      setUploading(null);
     }
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-    const file = formData.get("audio") as File | null;
-
-    if (!file || file.size === 0) {
-      setError("Bitte eine Audiodatei auswählen.");
-      return;
+  async function quickImport() {
+    try {
+      const res = await fetch("/api/dev-audio?name=visite.mp3");
+      if (!res.ok) throw new Error();
+      await uploadFile(new File([await res.blob()], "visite.mp3", { type: "audio/mpeg" }));
+    } catch {
+      setError("Schnellimport fehlgeschlagen.");
     }
-
-    await uploadFile(file);
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) {
-      void uploadFile(file);
-    }
+    e.target.value = "";
+    if (file) void uploadFile(file);
   }
 
-  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+  function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) {
-      void uploadFile(file);
-    }
+    if (file) void uploadFile(file);
+  }
+
+  const dragProps = {
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); },
+    onDragLeave: () => setIsDragOver(false),
+    onDrop: handleDrop,
+  };
+
+  const input = (
+    <input
+      id={inputId}
+      type="file"
+      accept={ACCEPT}
+      onChange={handleFileChange}
+      disabled={uploading !== null}
+      className="sr-only"
+    />
+  );
+
+  const devButton = process.env.NODE_ENV === "development" && (
+    <button type="button" onClick={quickImport} disabled={uploading !== null} className="btn-quiet text-warn">
+      visite.mp3
+    </button>
+  );
+
+  const errorText = error && <p role="alert" className="text-sm text-danger">{error}</p>;
+
+  if (current) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div
+          {...dragProps}
+          className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 transition ${
+            isDragOver ? "border-white/40 bg-white/10" : "border-white/10 bg-white/[0.03]"
+          }`}
+        >
+          <NoteIcon className="size-4 shrink-0 text-white/40" />
+          <span className="min-w-0 flex-1 truncate text-sm text-white/85" aria-live="polite">
+            {uploading ?? current}
+          </span>
+          {uploading && <span className="spinner" aria-hidden="true" />}
+          {devButton}
+          <label htmlFor={inputId} className="btn-quiet cursor-pointer has-[:disabled]:pointer-events-none has-[:disabled]:opacity-30">
+            Ersetzen
+            {input}
+          </label>
+        </div>
+        {errorText}
+      </div>
+    );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-      <div
-        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-        onDragLeave={() => setIsDragOver(false)}
-        onDrop={handleDrop}
-        className={`relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-12 transition cursor-pointer ${
+    <div className="flex flex-col gap-3">
+      <label
+        htmlFor={inputId}
+        {...dragProps}
+        className={`flex cursor-pointer flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed px-6 py-16 text-center transition has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent sm:py-24 ${
           isDragOver
-            ? "border-white/60 bg-white/15"
-            : "border-white/20 bg-white/5 hover:border-white/40 hover:bg-white/10"
+            ? "border-white/50 bg-white/10"
+            : "border-white/15 bg-white/[0.03] hover:border-white/30 hover:bg-white/[0.06]"
         }`}
       >
-        <svg
-          className="h-10 w-10 text-white/50"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-          />
-        </svg>
-        <p className="text-sm text-white/70">
-          {fileName ?? "MP3, WAV, M4A oder WebM hierhin ziehen oder klicken"}
-        </p>
-        <input
-          ref={inputRef}
-          type="file"
-          name="audio"
-          accept=".mp3,.mp4,.wav,.webm,.m4a,audio/*"
-          onChange={handleFileChange}
-          className="absolute inset-0 opacity-0 cursor-pointer"
-        />
-      </div>
+        {uploading ? <span className="spinner size-8" aria-hidden="true" /> : <NoteIcon className="size-10 text-white/40" />}
+        <span className="text-base font-medium text-white" aria-live="polite">
+          {uploading ? `${uploading} wird hochgeladen …` : "Song hierher ziehen oder auswählen"}
+        </span>
+        {!uploading && <span className="text-xs text-white/40">MP3, WAV, M4A, WebM</span>}
+        {input}
+      </label>
+      {errorText}
+      {devButton && <div className="self-center">{devButton}</div>}
+    </div>
+  );
+}
 
-      {error && (
-        <p className="text-sm text-red-400 text-center">{error}</p>
-      )}
-
-      <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={isLoading || !fileName}
-          className="flex-1 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {isLoading ? "Wird hochgeladen..." : "Hochladen"}
-        </button>
-
-        {process.env.NODE_ENV === "development" && (
-          <button
-            type="button"
-            disabled={isLoading}
-            onClick={async () => {
-              setError(null);
-              setIsLoading(true);
-              try {
-                const audioRes = await fetch("/api/dev-audio?name=visite.mp3");
-                if (!audioRes.ok) throw new Error("Dev-Audio nicht gefunden");
-                const blob = await audioRes.blob();
-                const file = new File([blob], "visite.mp3", { type: "audio/mpeg" });
-
-                const durationSec = await getAudioDuration(file);
-
-                const formData = new FormData();
-                formData.append("audio", file);
-
-                const res = await fetch("/api/upload-audio", { method: "POST", body: formData });
-                const data = await res.json();
-                if (!res.ok || data.error) {
-                  setError(data.error ?? "Fehler beim Hochladen.");
-                  return;
-                }
-                if (data.audioFilename) {
-                  onAudioUploaded(`/api/audio/${data.audioFilename}`, durationSec, "visite.mp3");
-                }
-              } catch {
-                setError("Schnellimport fehlgeschlagen.");
-              } finally {
-                setIsLoading(false);
-              }
-            }}
-            className="rounded-xl border border-dashed border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm font-medium text-yellow-400 transition hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {isLoading ? "..." : "visite.mp3"}
-          </button>
-        )}
-      </div>
-    </form>
+function NoteIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+      />
+    </svg>
   );
 }

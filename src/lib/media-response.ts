@@ -58,6 +58,8 @@ export async function createMediaResponse(
       "Accept-Ranges": "bytes",
       "Cache-Control": download ? "private, no-store" : "private, max-age=3600",
       "X-Content-Type-Options": "nosniff",
+      // Uploaded SVGs are same-origin; never let them run script when opened directly.
+      "Content-Security-Policy": "sandbox",
     });
     if (download) {
       headers.set("Content-Disposition", 'attachment; filename="lyrica-video.mp4"');

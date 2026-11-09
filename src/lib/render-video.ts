@@ -1,38 +1,27 @@
 import path from "path";
 import { existsSync } from "fs";
-import { copyFile, stat, mkdir, rm } from "fs/promises";
+import { copyFile, mkdir, rm } from "fs/promises";
 import { execFile } from "child_process";
 import { randomUUID } from "crypto";
 import { promisify } from "util";
 import { bundle } from "@remotion/bundler";
 import type { WebpackConfiguration } from "@remotion/bundler";
 import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
-import { availableRenderCpus, chooseRenderConcurrency } from "./render-resources";
+import { availableRenderCpus, chooseRenderConcurrency, memoryMb } from "./render-resources";
 import { sanitizeFilename } from "@/lib/sanitize-filename";
-import type { VideoConfig } from "@/types/lyrics";
-import { collectMetrics, generateHints, type RenderSummary, type SystemMetrics } from "./system-metrics";
+import type { RenderQuality, VideoConfig } from "@/types/lyrics";
 
 const execFileAsync = promisify(execFile);
 
 // One active render per process prevents memory overcommit across requests.
 let renderInProgress = false;
 
-export type RenderMetrics = {
-  fps: number;
-  framesRendered: number;
-  totalFrames: number;
-  elapsedSec: number;
-  etaSec: number;
-  cpu: SystemMetrics;
-};
-
 export type RenderProgress = {
-  phase: "bundling" | "rendering" | "done";
+  phase: "bundling" | "rendering";
   progress: number; // 0-1
 };
 
-// Cache the bundle location across renders — only changes when code changes (dev restart)
-let cachedBundleLocation: string | null = null;
+// Bundle once per process; only changes when code changes (dev restart).
 let bundlePromise: Promise<string> | null = null;
 
 const webpackOverride = (currentConfig: WebpackConfiguration): WebpackConfiguration => ({
@@ -48,42 +37,23 @@ const webpackOverride = (currentConfig: WebpackConfiguration): WebpackConfigurat
   },
 });
 
-function resolveBrowserExecutable(log?: (msg: string) => void): string | undefined {
-  const configuredPath = process.env.CHROME_EXECUTABLE?.trim();
-
-  if (configuredPath) {
-    if (configuredPath.toLowerCase().includes("brave")) {
-      log?.("Warnung: CHROME_EXECUTABLE zeigt auf Brave und wird ignoriert (Performance-Grund).");
-    } else if (existsSync(configuredPath)) {
-      log?.(`Browser: Verwende CHROME_EXECUTABLE (${configuredPath})`);
-      return configuredPath;
-    } else {
-      log?.(`Warnung: CHROME_EXECUTABLE nicht gefunden: ${configuredPath}`);
-    }
+function resolveBrowserExecutable(): string | undefined {
+  const configured = process.env.CHROME_EXECUTABLE?.trim();
+  if (configured) {
+    // Brave renders far slower than Chrome; ignore it.
+    if (!configured.toLowerCase().includes("brave") && existsSync(configured)) return configured;
+    console.warn(`[render] CHROME_EXECUTABLE ignoriert: ${configured}`);
   }
-
-  const fallbackCandidates =
+  const candidates =
     process.platform === "darwin"
       ? [
           "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
           "/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
           "/Applications/Chromium.app/Contents/MacOS/Chromium",
         ]
-      : [
-          "/usr/bin/google-chrome",
-          "/usr/bin/google-chrome-stable",
-          "/usr/bin/chromium",
-          "/usr/bin/chromium-browser",
-        ];
-
-  const detected = fallbackCandidates.find((candidate) => existsSync(candidate));
-  if (detected) {
-    log?.(`Browser: Auto-detected ${detected}`);
-    return detected;
-  }
-
-  log?.("Browser: Kein lokaler Chrome/Chromium erkannt, Remotion-Fallback wird verwendet");
-  return undefined;
+      : ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
+  // undefined lets Remotion download its own headless shell.
+  return candidates.find((candidate) => existsSync(candidate));
 }
 
 function toSafeAssetName(raw: string): string | null {
@@ -93,48 +63,18 @@ function toSafeAssetName(raw: string): string | null {
   return safe;
 }
 
-async function getOrCreateBundle(
-  onProgress?: (p: RenderProgress) => void
-): Promise<string> {
-  if (cachedBundleLocation) {
-    onProgress?.({ phase: "bundling", progress: 1 });
-    return cachedBundleLocation;
-  }
-
-  // Deduplicate concurrent bundle requests (e.g. pre-bundle + first render race)
-  if (bundlePromise) {
-    const location = await bundlePromise;
-    onProgress?.({ phase: "bundling", progress: 1 });
-    return location;
-  }
-
-  const entryPoint = path.join(process.cwd(), "src/remotion/index.ts");
-
-  bundlePromise = bundle({
-    entryPoint,
+function getOrCreateBundle(onProgress?: (p: RenderProgress) => void): Promise<string> {
+  bundlePromise ??= bundle({
+    entryPoint: path.join(process.cwd(), "src/remotion/index.ts"),
     // Desktop dependencies live in the signed, read-only app bundle.
     enableCaching: !process.env.LYRICA_RESOURCES,
     onProgress: (p) => onProgress?.({ phase: "bundling", progress: p / 100 }),
     webpackOverride,
-  }).finally(() => {
+  }).catch((err) => {
     bundlePromise = null;
+    throw err;
   });
-
-  const location = await bundlePromise;
-  cachedBundleLocation = location;
-  return location;
-}
-
-/**
- * Pre-bundle Remotion at startup so the first render doesn't pay the bundling cost.
- * Called from instrumentation.ts on server start.
- */
-export async function preBundleRemotionIfNeeded(): Promise<void> {
-  if (cachedBundleLocation) return;
-  const start = Date.now();
-  console.log("[remotion] Pre-bundling started…");
-  await getOrCreateBundle();
-  console.log(`[remotion] Pre-bundling done in ${((Date.now() - start) / 1000).toFixed(1)}s`);
+  return bundlePromise;
 }
 
 /**
@@ -168,16 +108,14 @@ async function resizeBgIfNeeded(
 
 export type RenderCallbacks = {
   onProgress?: (p: RenderProgress) => void;
-  onLog?: (message: string) => void;
-  onMetrics?: (m: RenderMetrics) => void;
-  onSummary?: (s: RenderSummary) => void;
   signal?: AbortSignal;
 };
 
-export type RenderProfile = "fast" | "balanced" | "quality";
+// The composition is always laid out at the preview size; profiles only change output scale.
+const COMPOSITION_WIDTH = 1920;
+const COMPOSITION_HEIGHT = 1080;
 
 interface ProfileSettings {
-  label: string;
   width: number;
   height: number;
   fps: number;
@@ -187,9 +125,8 @@ interface ProfileSettings {
   memPerWorkerMb: number;
 }
 
-const PROFILES: Record<RenderProfile, ProfileSettings> = {
+const PROFILES: Record<RenderQuality, ProfileSettings> = {
   fast: {
-    label: "Schnell",
     width: 1280,
     height: 720,
     fps: 24,
@@ -202,7 +139,6 @@ const PROFILES: Record<RenderProfile, ProfileSettings> = {
     memPerWorkerMb: 1500,
   },
   balanced: {
-    label: "Ausgewogen",
     width: 1920,
     height: 1080,
     fps: 30,
@@ -212,7 +148,6 @@ const PROFILES: Record<RenderProfile, ProfileSettings> = {
     memPerWorkerMb: 2000,
   },
   quality: {
-    label: "Qualität",
     width: 1920,
     height: 1080,
     fps: 30,
@@ -228,14 +163,12 @@ export async function renderVideo(
   outputPath: string,
   callbacks?: RenderCallbacks
 ): Promise<string> {
-  const { onProgress, onLog, onMetrics, onSummary, signal } = callbacks ?? {};
-  const log = (msg: string) => onLog?.(msg);
+  const { onProgress, signal } = callbacks ?? {};
   const publicDir = path.join(process.cwd(), "public");
   const tmpDir = path.join(process.cwd(), "tmp", "lyrica");
   let bundleAssetDir: string | null = null;
 
-  const profileKey: RenderProfile = config.renderQuality ?? "balanced";
-  const profile = PROFILES[profileKey];
+  const profile = PROFILES[config.renderQuality ?? "balanced"];
   const renderWidth = profile.width;
   const renderHeight = profile.height;
   const renderFps = profile.fps;
@@ -243,24 +176,17 @@ export async function renderVideo(
   const durationSec = config.durationInFrames / config.fps;
   const renderFrameCount = Math.ceil(durationSec * renderFps);
 
-  log(`Profil: ${profile.label}`);
-  log(`Auflösung: ${renderWidth}x${renderHeight} @ ${renderFps}fps`);
-  log(`Dauer: ${durationSec.toFixed(1)}s → ${renderFrameCount} Frames`);
-  log(`Lyrics: ${config.lines.length} Zeilen`);
 
   const audioFilename = toSafeAssetName(config.audioUrl.split("/").pop() ?? "");
   if (!audioFilename) throw new Error("Ungültige audioUrl: Dateiname konnte nicht extrahiert werden");
-  let renderConfig: VideoConfig;
 
   if (renderInProgress) throw new Error("Ein Export läuft bereits. Bitte warte, bis er abgeschlossen ist.");
   renderInProgress = true;
   try {
     if (signal?.aborted) throw new Error("Render abgebrochen.");
 
-    log("Remotion-Bundle wird geladen…");
-    const bundleStart = Date.now();
     const bundleLocation = await getOrCreateBundle(onProgress);
-    log(`Bundle bereit (${((Date.now() - bundleStart) / 1000).toFixed(1)}s)`);
+    onProgress?.({ phase: "bundling", progress: 1 });
 
     // Assets must live under public/ — the render page resolves asset URLs
     // relative to the bundle's public dir (/public/...). Dot-dirs at bundle
@@ -269,7 +195,6 @@ export async function renderVideo(
     bundleAssetDir = path.join(bundleLocation, assetDirName);
     await mkdir(bundleAssetDir, { recursive: true });
 
-    log("Audio wird in den Render-Asset-Ordner kopiert…");
     const audioSrc = path.join(tmpDir, audioFilename);
     const audioDest = path.join(bundleAssetDir, audioFilename);
     await copyFile(audioSrc, audioDest);
@@ -281,31 +206,20 @@ export async function renderVideo(
       .replace(/^\//, "");
     const bgImageBasename = toSafeAssetName(rawBgName);
 
-    if (!config.style.bgImage.startsWith("http") && rawBgName && !bgImageBasename) {
+    if (rawBgName && !bgImageBasename) {
       throw new Error("Ungültiger Hintergrund-Dateiname.");
     }
 
-    if (bgImageBasename && !config.style.bgImage.startsWith("http")) {
-      const bgDest = path.join(bundleAssetDir, bgImageBasename);
-      const tmpBgSrc = path.join(tmpDir, bgImageBasename);
-      try {
-        await stat(tmpBgSrc);
-        log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
-        if (config.style.bgType === "video") await copyFile(tmpBgSrc, bgDest);
-        else await resizeBgIfNeeded(tmpBgSrc, bgDest, renderWidth, renderHeight);
+    if (bgImageBasename) {
+      const bgSrc = [path.join(tmpDir, bgImageBasename), path.join(publicDir, bgImageBasename)].find((p) => existsSync(p));
+      if (bgSrc) {
+        const bgDest = path.join(bundleAssetDir, bgImageBasename);
+        if (config.style.bgType === "video") await copyFile(bgSrc, bgDest);
+        else await resizeBgIfNeeded(bgSrc, bgDest, renderWidth, renderHeight);
         bgImageForRender = `/${assetDirName}/${bgImageBasename}`;
-      } catch {
-        const publicBgSrc = path.join(publicDir, bgImageBasename);
-        try {
-          log(`Hintergrundbild wird auf ${renderWidth}x${renderHeight} skaliert…`);
-          if (config.style.bgType === "video") await copyFile(publicBgSrc, bgDest);
-          else await resizeBgIfNeeded(publicBgSrc, bgDest, renderWidth, renderHeight);
-          bgImageForRender = `/${assetDirName}/${bgImageBasename}`;
-          log("Hintergrundbild in den Render-Asset-Ordner kopiert und skaliert");
-        } catch {
-          log(`Warnung: Hintergrundbild nicht gefunden: ${bgImageBasename}`);
-          bgImageForRender = `/${bgImageBasename}`;
-        }
+      } else {
+        console.warn(`[render] Hintergrund nicht gefunden: ${bgImageBasename}`);
+        bgImageForRender = `/${bgImageBasename}`;
       }
     }
 
@@ -313,63 +227,50 @@ export async function renderVideo(
     let logoForRender = config.style.customLogo;
     if (logoForRender?.startsWith("/api/audio/")) {
       const logoFilename = toSafeAssetName(logoForRender.replace("/api/audio/", ""));
-      if (logoFilename) {
-        const logoSrc = path.join(tmpDir, logoFilename);
-        try {
-          await stat(logoSrc);
-          const logoDest = path.join(bundleAssetDir, logoFilename);
-          await copyFile(logoSrc, logoDest);
-          logoForRender = `/${assetDirName}/${logoFilename}`;
-          log("Logo in den Render-Asset-Ordner kopiert");
-        } catch {
-          log(`Warnung: Logo-Datei nicht gefunden: ${logoFilename}`);
-        }
+      const logoSrc = logoFilename && path.join(tmpDir, logoFilename);
+      if (logoSrc && existsSync(logoSrc)) {
+        await copyFile(logoSrc, path.join(bundleAssetDir, logoFilename));
+        logoForRender = `/${assetDirName}/${logoFilename}`;
+      } else {
+        console.warn(`[render] Logo nicht gefunden: ${logoFilename}`);
       }
     }
 
-    renderConfig = {
+    const renderConfig: VideoConfig = {
       ...config,
       previewQuality: undefined,
-      lines: config.lines.map((line) => ({ ...line, startFrame: Math.round(line.startSec * renderFps), endFrame: Math.round(line.endSec * renderFps) })),
+      // Rescale preview frames (not seconds) so fade padding and overlap clamping survive.
+      lines: config.lines.map((line) => ({
+        ...line,
+        startFrame: Math.round((line.startFrame * renderFps) / config.fps),
+        endFrame: Math.round((line.endFrame * renderFps) / config.fps),
+      })),
       audioUrl: audioAssetPath,
       style: { ...config.style, bgImage: bgImageForRender, customLogo: logoForRender },
-      width: renderWidth,
-      height: renderHeight,
+      width: COMPOSITION_WIDTH,
+      height: COMPOSITION_HEIGHT,
       fps: renderFps,
       durationInFrames: renderFrameCount,
     };
 
     const inputProps = renderConfig as unknown as Record<string, unknown>;
-    const browserExecutable = resolveBrowserExecutable(log);
+    const browserExecutable = resolveBrowserExecutable();
 
-    log("Composition wird ermittelt…");
     const composition = await selectComposition({
       serveUrl: bundleLocation,
       id: "LyricsVideo",
       inputProps,
       browserExecutable,
     });
-    log(`Composition: ${composition.width}x${composition.height}, ${composition.durationInFrames} Frames`);
 
     const cpus = await availableRenderCpus();
-    const resources = await collectMetrics();
-    const totalMemMb = resources.memTotalMb;
-    const tuning = chooseRenderConcurrency({
-      cpus, totalMb: totalMemMb, availableMb: Math.max(0, totalMemMb - resources.memUsedMb),
+    const { totalMb, usedMb } = await memoryMb();
+    const { concurrency } = chooseRenderConcurrency({
+      cpus, totalMb, availableMb: Math.max(0, totalMb - usedMb),
       workerMb: profile.memPerWorkerMb, durationSec, hardCap: profile.hardCap,
       override: process.env.RENDER_CONCURRENCY,
     });
-    const concurrency = tuning.concurrency;
-    log(`Rendering startet: ${concurrency} parallele Worker, ${cpus} CPUs verfügbar`);
-    log(tuning.overridden ? `Concurrency-Override aktiv via Env: ${concurrency}`
-      : `Auto-Tuning: verfügbares RAM-Budget ${Math.round(tuning.budgetMb)}MB, ~${tuning.workerBudgetMb}MB/Worker inkl. Audio`);
-    log(`Codec: H.264, Bitrate: ${profile.videoBitrate}, JPEG: ${profile.jpegQuality}, HW-Accel: if-possible`);
-
     const renderStart = Date.now();
-    let lastLoggedPercent = 0;
-    let peakCpuPercent = 0;
-    let peakMemMb = 0;
-    let lastMetricsTime = 0;
 
     // Bridge AbortSignal to Remotion's cancel mechanism
     const { cancelSignal, cancel } = makeCancelSignal();
@@ -381,9 +282,6 @@ export async function renderVideo(
       }
     }
 
-    // Collect initial CPU sample (first call is always 0)
-    await collectMetrics();
-
     await renderMedia({
       cancelSignal,
       composition,
@@ -392,6 +290,7 @@ export async function renderVideo(
       outputLocation: outputPath,
       inputProps,
       concurrency,
+      scale: renderWidth / composition.width,
       browserExecutable,
       hardwareAcceleration: "if-possible",
       timeoutInMilliseconds: 300_000,
@@ -399,88 +298,17 @@ export async function renderVideo(
       x264Preset: "ultrafast",
       jpegQuality: profile.jpegQuality,
       imageFormat: "jpeg",
-      disallowParallelEncoding: false,
       // encodingBufferSize/encodingMaxRate intentionally omitted: they force
       // x264 software encoding and disable VideoToolbox HW acceleration on
       // Apple Silicon, which costs us ~5x render speed on the M4 Pro.
       chromiumOptions: {
         gl: process.platform === "darwin" ? "angle" : undefined,
       },
-      onProgress: ({ progress }) => {
-        onProgress?.({ phase: "rendering", progress });
-        const now = Date.now();
-        const elapsed = (now - renderStart) / 1000;
-        const percent = Math.round(progress * 100);
-        const framesRendered = Math.round(progress * renderFrameCount);
-        const fps = elapsed > 0 ? framesRendered / elapsed : 0;
-        const eta = progress > 0 ? (elapsed / progress) * (1 - progress) : 0;
-
-        if (percent >= lastLoggedPercent + 10) {
-          log(`Frame-Rendering: ${percent}% (${elapsed.toFixed(0)}s vergangen, ~${eta.toFixed(0)}s verbleibend)`);
-          lastLoggedPercent = percent;
-        }
-
-        // Send metrics every 2 seconds
-        if (now - lastMetricsTime >= 2000) {
-          lastMetricsTime = now;
-          collectMetrics()
-            .then((cpu) => {
-              if (cpu.cpuPercent > peakCpuPercent) peakCpuPercent = cpu.cpuPercent;
-              if (cpu.memUsedMb > peakMemMb) peakMemMb = cpu.memUsedMb;
-              try {
-                onMetrics?.({
-                  fps: Math.round(fps * 10) / 10,
-                  framesRendered,
-                  totalFrames: renderFrameCount,
-                  elapsedSec: Math.round(elapsed),
-                  etaSec: Math.round(eta),
-                  cpu,
-                });
-              } catch {
-                // Stream may be closed (client disconnected) — swallow
-              }
-            })
-            .catch(() => {
-              // collectMetrics may fail under load — never crash the render
-            });
-        }
-      },
+      onProgress: ({ progress }) => onProgress?.({ phase: "rendering", progress }),
     });
 
     const totalTimeSec = (Date.now() - renderStart) / 1000;
-    const avgFps = renderFrameCount / totalTimeSec;
-
-    log(`Rendering abgeschlossen in ${totalTimeSec.toFixed(1)}s`);
-    console.log(`[render] ${renderFrameCount} frames in ${totalTimeSec.toFixed(1)}s (${avgFps.toFixed(1)} fps), concurrency=${concurrency}`);
-
-    const outputStat = await stat(outputPath);
-    const fileSizeMb = outputStat.size / 1024 / 1024;
-    log(`Video: ${fileSizeMb.toFixed(1)} MB`);
-
-    // Collect final metrics for summary
-    const finalMetrics = await collectMetrics();
-    if (finalMetrics.memUsedMb > peakMemMb) peakMemMb = finalMetrics.memUsedMb;
-
-    const summary: RenderSummary = {
-      totalFrames: renderFrameCount,
-      totalTimeSec: Math.round(totalTimeSec),
-      avgFps: Math.round(avgFps * 10) / 10,
-      concurrency,
-      cpuCount: cpus,
-      peakCpuPercent,
-      peakMemMb,
-      memTotalMb: finalMetrics.memTotalMb,
-      resolution: `${renderWidth}x${renderHeight}`,
-      quality: profile.label,
-      hints: [],
-    };
-    summary.hints = generateHints(summary);
-    onSummary?.(summary);
-
-    // Log hints to server console
-    for (const hint of summary.hints) {
-      console.log(`[render:hint] ${hint}`);
-    }
+    console.log(`[render] ${renderFrameCount} frames in ${totalTimeSec.toFixed(1)}s (${(renderFrameCount / totalTimeSec).toFixed(1)} fps), concurrency=${concurrency}`);
 
     return outputPath;
   } finally {

@@ -26,22 +26,17 @@ export function LyricsValidationPanel({
 }: LyricsValidationPanelProps) {
   if (phase !== "done" || !result) {
     return (
-      <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-        <div className="flex items-center gap-3">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-          <span className="text-sm text-white/60">
-            {phase === "identifying" && "Song wird erkannt..."}
-            {phase === "fetching" && "Lyrics werden gesucht..."}
-            {phase === "validating" && "Lyrics werden verglichen..."}
-          </span>
-        </div>
-        <button
-          onClick={onSkip}
-          className="mt-3 text-xs text-white/30 transition hover:text-white/50"
-        >
+      <section className="panel flex items-center gap-3" aria-label="Lyrics-Abgleich">
+        <span className="spinner" aria-hidden="true" />
+        <span role="status" className="flex-1 text-sm text-white/70">
+          {phase === "identifying" && "Song wird erkannt …"}
+          {phase === "fetching" && "Lyrics werden gesucht …"}
+          {phase === "validating" && "Lyrics werden verglichen …"}
+        </span>
+        <button type="button" onClick={onSkip} className="btn-quiet">
           Überspringen
         </button>
-      </div>
+      </section>
     );
   }
 
@@ -49,27 +44,24 @@ export function LyricsValidationPanel({
   const hasIssues = result.lineValidations.some((v) => v.issue);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-      {/* Header */}
+    <section className="panel" aria-label="Lyrics-Abgleich">
       {result.songMatch ? (
         <div className="mb-4">
-          <p className="text-sm font-medium text-white">
+          <h2 className="text-sm font-semibold text-white">
             {result.songMatch.title}{" "}
-            <span className="text-white/50">— {result.songMatch.artist}</span>
-          </p>
+            <span className="font-normal text-white/50">· {result.songMatch.artist}</span>
+          </h2>
           {hasReference && (
-            <p className="mt-1 text-xs text-white/40">
-              Übereinstimmung: {result.overallScore}%
+            <p className="mt-1 text-xs tabular-nums text-white/45">
+              {result.overallScore}% Übereinstimmung
             </p>
           )}
         </div>
       ) : (
         <div className="mb-4">
-          <p className="text-sm text-white/60">
-            Song nicht erkannt
-          </p>
-          <p className="mt-1 text-xs text-white/40">
-            Qualitäts-Score: {result.overallScore}/100
+          <h2 className="text-sm font-semibold text-white">Song nicht erkannt</h2>
+          <p className="mt-1 text-xs tabular-nums text-white/45">
+            Qualität {result.overallScore}/100
           </p>
         </div>
       )}
@@ -84,11 +76,13 @@ export function LyricsValidationPanel({
             return (
               <div
                 key={v.lineIndex}
-                className="flex items-start gap-2 rounded-lg bg-white/5 px-3 py-1.5 text-xs"
+                className="flex items-start gap-2.5 rounded-lg bg-white/[0.03] px-3 py-1.5 text-xs"
               >
-                <span className="mt-0.5 shrink-0">
-                  {similarityDot(v.similarity)}
-                </span>
+                <span
+                  className={`mt-1 size-2 shrink-0 rounded-full ${similarityColor(v.similarity)}`}
+                  role="img"
+                  aria-label={`${Math.round(v.similarity * 100)}%`}
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-white/70 truncate">{line.text}</p>
                   {v.similarity < 0.95 && (
@@ -108,12 +102,12 @@ export function LyricsValidationPanel({
             .filter((v) => v.issue)
             .slice(0, 5)
             .map((v) => (
-              <p key={v.lineIndex} className="text-xs text-amber-400/80">
+              <p key={v.lineIndex} className="text-xs text-warn">
                 Zeile {v.lineIndex + 1}: {issueLabel(v.issue!)}
               </p>
             ))}
           {result.lineValidations.filter((v) => v.issue).length > 5 && (
-            <p className="text-xs text-white/30">
+            <p className="text-xs text-white/40">
               +{result.lineValidations.filter((v) => v.issue).length - 5} weitere
             </p>
           )}
@@ -121,7 +115,7 @@ export function LyricsValidationPanel({
       )}
 
       {/* Actions */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {hasReference ? (
           <>
             <ActionButton
@@ -163,14 +157,11 @@ export function LyricsValidationPanel({
             onClick={() => onAccept(lines)}
           />
         )}
-        <button
-          onClick={onSkip}
-          className="text-xs text-white/30 transition hover:text-white/50 px-3 py-2"
-        >
+        <button type="button" onClick={onSkip} className="btn-quiet">
           Überspringen
         </button>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -185,22 +176,19 @@ function ActionButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`rounded-lg px-4 py-2 text-xs font-medium transition ${
-        primary
-          ? "bg-white/15 text-white hover:bg-white/25"
-          : "border border-white/10 text-white/60 hover:bg-white/5 hover:text-white/80"
-      }`}
+      className={primary ? "btn-solid" : "btn"}
     >
       {label}
     </button>
   );
 }
 
-function similarityDot(score: number): string {
-  if (score >= 0.8) return "\u{1F7E2}";
-  if (score >= 0.5) return "\u{1F7E1}";
-  return "\u{1F534}";
+function similarityColor(score: number): string {
+  if (score >= 0.8) return "bg-ok";
+  if (score >= 0.5) return "bg-warn";
+  return "bg-danger";
 }
 
 function issueLabel(issue: string): string {

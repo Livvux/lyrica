@@ -4,6 +4,8 @@ import { join } from "path";
 import { unlink, stat } from "fs/promises";
 import { randomUUID } from "crypto";
 import { sanitizeFilename } from "@/lib/sanitize-filename";
+import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/get-client-ip";
 import type { MixTrack } from "@/types/lyrics";
 
 const TMP_DIR = join(process.cwd(), "tmp", "lyrica");
@@ -126,6 +128,10 @@ function clusterSamples(samples: SampleResult[], audioDuration: number): MixTrac
 }
 
 export async function POST(req: Request) {
+  // Each call spawns ffmpeg + fpcalc once per minute of audio.
+  const limited = rateLimit("identify-mix", { windowMs: 60_000, max: 3, clientKey: getClientIp(req) });
+  if (limited) return limited;
+
   const apiKey = process.env.ACOUSTID_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -134,23 +140,21 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { audioFilename?: string };
+  let body: { audioFilename?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { audioFilename } = body;
+  const { audioFilename } = body ?? {};
   if (!audioFilename || typeof audioFilename !== "string") {
     return NextResponse.json({ error: "audioFilename required" }, { status: 400 });
   }
 
   const safe = sanitizeFilename(audioFilename);
   const audioPath = join(TMP_DIR, safe);
-  try {
-    await stat(audioPath);
-  } catch {
+  if (!(await stat(audioPath).catch(() => null))?.isFile()) {
     return NextResponse.json({ error: "Audio file not found" }, { status: 404 });
   }
 
@@ -170,6 +174,7 @@ export async function POST(req: Request) {
   const samples: SampleResult[] = [];
 
   for (const offset of offsets) {
+    if (req.signal.aborted) break;
     const clipPath = join(TMP_DIR, `mix-${randomUUID()}.wav`);
     try {
       await extractClip(audioPath, offset, clipPath);

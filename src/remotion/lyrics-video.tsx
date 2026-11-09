@@ -16,6 +16,11 @@ import {
 import type { VideoConfig } from "@/types/lyrics";
 import type { LyricLine } from "@/types/lyrics";
 
+// Preview passes URLs ("/api/audio/x.mp3", blob:, http); render passes bundle-relative names.
+function resolveAudioUrl(url: string): string {
+  return url.startsWith("/") || url.startsWith("blob:") || url.startsWith("http") ? url : staticFile(url);
+}
+
 function findFirstCandidateIndex(lines: LyricLine[], frame: number): number {
   let low = 0;
   let high = lines.length - 1;
@@ -55,12 +60,6 @@ const VideoScene: React.FC<VideoConfig & { beat: BeatPulse }> = ({
 }) => {
   const reduceDetail = renderQuality === "fast" || (previewQuality !== undefined && previewQuality !== "high");
   const minimal = previewQuality === "low";
-  // Preview (client): audioUrl starts with "/" (e.g. "/api/audio/abc.mp3") -> use directly
-  // Render (server): audioUrl is just filename (e.g. "abc.mp3") -> use staticFile (served from publicDir)
-  const resolvedAudioUrl =
-    audioUrl.startsWith("/") || audioUrl.startsWith("blob:") || audioUrl.startsWith("http")
-      ? audioUrl
-      : staticFile(audioUrl);
 
   const frame = useCurrentFrame();
   const activeLineIndices = getActiveLineIndices(lines, frame);
@@ -88,7 +87,7 @@ const VideoScene: React.FC<VideoConfig & { beat: BeatPulse }> = ({
         minimal={minimal}
         waveConfig={style.waveConfig}
       />
-      {audioUrl && <Audio src={resolvedAudioUrl} />}
+      {audioUrl && <Audio src={resolveAudioUrl(audioUrl)} />}
       {activeLineIndices.map((index) => (
         <LyricsLineComponent
           key={index}
@@ -119,9 +118,7 @@ const VideoScene: React.FC<VideoConfig & { beat: BeatPulse }> = ({
 };
 
 const ReactiveVideo: React.FC<VideoConfig> = (config) => {
-  const url = config.audioUrl.startsWith("/") || config.audioUrl.startsWith("blob:") || config.audioUrl.startsWith("http")
-    ? config.audioUrl : staticFile(config.audioUrl);
-  const beat = useBeatPulse(url, config.style.effectIntensity, config.style.beatReactive, config.style.visualizerMode !== "none");
+  const beat = useBeatPulse(resolveAudioUrl(config.audioUrl), config.style.effectIntensity, config.style.beatReactive, config.style.visualizerMode !== "none");
   return <VideoScene {...config} beat={beat} />;
 };
 

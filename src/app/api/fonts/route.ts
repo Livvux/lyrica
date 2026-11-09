@@ -1,32 +1,33 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { NextResponse } from "next/server";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+const FALLBACK_FONTS = ["Inter", "Arial", "Helvetica", "sans-serif"];
 
-// Cache font list in memory — system fonts don't change during runtime
-let cachedFonts: string[] | null = null;
+// System fonts don't change at runtime; cache the list (or the fallback when fc-list is missing).
+let fontsPromise: Promise<string[]> | null = null;
+
+async function listFonts(): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync("fc-list", [":", "family"]);
+    const fonts = [
+      ...new Set(
+        stdout
+          .split("\n")
+          .map((line) => line.split(",")[0].trim())
+          .filter((name) => name.length > 0 && !name.startsWith("."))
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+    return fonts.length > 0 ? fonts : FALLBACK_FONTS;
+  } catch {
+    return FALLBACK_FONTS;
+  }
+}
 
 export async function GET() {
-  try {
-    if (!cachedFonts) {
-      const { stdout } = await execAsync("fc-list : family");
-      cachedFonts = [
-        ...new Set(
-          stdout
-            .split("\n")
-            .map((line) => line.split(",")[0].trim())
-            .filter((name) => name.length > 0 && !name.startsWith("."))
-        ),
-      ].sort((a, b) => a.localeCompare(b));
-    }
-
-    return NextResponse.json(cachedFonts, {
-      headers: { "Cache-Control": "public, max-age=3600" },
-    });
-  } catch {
-    return NextResponse.json(["Inter", "Arial", "Helvetica", "sans-serif"], {
-      status: 200,
-    });
-  }
+  fontsPromise ??= listFonts();
+  return NextResponse.json(await fontsPromise, {
+    headers: { "Cache-Control": "public, max-age=3600" },
+  });
 }

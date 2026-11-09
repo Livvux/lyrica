@@ -7,7 +7,6 @@ import { renderVideo } from "@/lib/render-video";
 import { cleanupTmpFiles } from "@/lib/cleanup-tmp";
 import { rateLimit } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/get-client-ip";
-import { startServerPerf } from "@/lib/perf";
 import { installRenderSafetyNet } from "@/lib/render-safety-net";
 import type { VideoConfig } from "@/types/lyrics";
 
@@ -16,6 +15,10 @@ export const runtime = "nodejs";
 installRenderSafetyNet();
 
 const MAX_DURATION_FRAMES = 30 * 60 * 120; // 120 Minuten @ 30fps
+// Assets must be same-origin paths ("/bg-default.jpg", "/api/audio/<file>"): the render
+// browser must never be pointed at arbitrary remote URLs.
+// Browsers treat "\" and strip tabs/newlines, so "/\host" would resolve cross-origin.
+const LocalAssetPath = z.string().max(512).regex(/^\/(?![/\\])[^\\\x00-\x1f]*$/);
 
 const TranscriptionWordSchema = z.object({
   word: z.string(),
@@ -45,14 +48,14 @@ const StyleConfigSchema = z.object({
   fontSize: z.number().positive(),
   fontFamily: z.string(),
   textColor: z.string(),
-  bgImage: z.string(),
+  bgImage: LocalAssetPath,
   bgType: z.enum(["image", "video"]),
   effectIntensity: z.enum(["off", "subtle", "strong"]),
   beatReactive: z.boolean(),
   animationVariant: z.enum(["fade-drift", "zoom", "slide-horizontal", "typewriter", "handwritten", "karaoke"]),
   visualizerMode: z.enum(["none", "rainbow", "mono", "wave", "waves", "spectrum"]),
   logoScale: z.number(),
-  customLogo: z.string().nullable(),
+  customLogo: LocalAssetPath.nullable(),
   postEffect: z.enum(["none", "glitch", "vhs", "film-grain", "chromatic-aberration", "camera-shake"]),
   showWatermark: z.boolean(),
   waveConfig: WaveConfigSchema,
@@ -60,133 +63,66 @@ const StyleConfigSchema = z.object({
 
 const VideoConfigSchema = z.object({
   lines: z.array(LyricLineSchema),
-  audioUrl: z.string(),
+  audioUrl: LocalAssetPath,
   style: StyleConfigSchema,
   durationInFrames: z.number().int().positive().max(MAX_DURATION_FRAMES),
-  fps: z.number().int().positive(),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
+  fps: z.number().int().positive().max(60),
+  width: z.number().int().positive().max(3840),
+  height: z.number().int().positive().max(3840),
   renderQuality: z.enum(["fast", "balanced", "quality"]).optional(),
 });
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
 export async function POST(request: Request) {
-  const parsePerf = startServerPerf("api.render.parse");
-  const clientIp = getClientIp(request);
-  const limited = rateLimit("render", { windowMs: 60_000, max: 3, clientKey: clientIp });
-  if (limited) {
-    parsePerf({ status: 429, clientIp });
-    return limited;
-  }
+  const limited = rateLimit("render", { windowMs: 60_000, max: 3, clientKey: getClientIp(request) });
+  if (limited) return limited;
 
-  // Clean up old tmp files (non-blocking)
   cleanupTmpFiles();
 
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
-    parsePerf({ status: 400, reason: "invalid-json", clientIp });
-    return NextResponse.json({ error: "Ungültiges JSON." }, { status: 400 });
-  }
-
-  const parsed = VideoConfigSchema.safeParse(raw);
+  const parsed = VideoConfigSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    parsePerf({ status: 400, reason: "invalid-config", clientIp });
-    return NextResponse.json(
-      { error: "Ungültige Video-Konfiguration.", details: parsed.error.issues },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Ungültige Video-Konfiguration.", details: parsed.error.issues }, { status: 400 });
   }
   const config: VideoConfig = parsed.data;
 
   await mkdir(TMP_DIR, { recursive: true });
   const outputFilename = `${randomUUID()}.mp4`;
   const outputPath = path.join(TMP_DIR, outputFilename);
-  parsePerf({
-    status: 200,
-    clientIp,
-    quality: config.renderQuality ?? "balanced",
-    durationFrames: config.durationInFrames,
-  });
-  const renderPerf = startServerPerf("api.render.stream", {
-    clientIp,
-    quality: config.renderQuality ?? "balanced",
-    durationFrames: config.durationInFrames,
-  });
-
   const encoder = new TextEncoder();
+
   const stream = new ReadableStream({
     async start(controller) {
-      let closed = false;
-
+      // Next.js closes the controller the same tick the client aborts; never enqueue after that.
       const send = (data: Record<string, unknown>) => {
-        // Double gate: our own flag plus the request signal. Next.js flips
-        // the underlying controller to a closed state the same tick the
-        // abort fires, so checking `request.signal.aborted` prevents a race
-        // where our flag hasn't been set yet by the abort listener below.
-        if (closed || request.signal.aborted) return;
+        if (request.signal.aborted) return;
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         } catch {
-          closed = true;
+          // client gone
         }
       };
-
-      const onAbort = () => {
-        closed = true;
-      };
-      request.signal.addEventListener("abort", onAbort, { once: true });
 
       try {
-        await renderVideo(config, outputPath, {
-          signal: request.signal,
-          onProgress: (p) => {
-            send({ phase: p.phase, progress: p.progress });
-          },
-          onLog: (message) => {
-            send({ phase: "log", message });
-          },
-          onMetrics: (m) => {
-            send({ phase: "metrics", metrics: m });
-          },
-          onSummary: (s) => {
-            send({ phase: "summary", summary: s });
-          },
-        });
-
+        await renderVideo(config, outputPath, { signal: request.signal, onProgress: send });
         send({ phase: "done", filename: outputFilename });
-        renderPerf({ status: 200 });
       } catch (e) {
-        if (request.signal.aborted) {
-          renderPerf({ status: 499, reason: "client-aborted" });
-        } else {
+        if (!request.signal.aborted) {
           console.error("Render error:", e);
-          const errorMsg = e instanceof Error ? e.message : "Unbekannter Fehler";
-          send({ phase: "log", message: "FEHLER: Render fehlgeschlagen (Details im Server-Log)." });
-          send({ phase: "error", error: "Fehler beim Rendern des Videos." });
-          renderPerf({ status: 500, error: errorMsg });
+          const busy = e instanceof Error && e.message.startsWith("Ein Export läuft bereits");
+          send({ phase: "error", error: busy ? e.message : "Fehler beim Rendern des Videos." });
         }
       } finally {
-        request.signal.removeEventListener("abort", onAbort);
-        if (!closed) {
-          closed = true;
-          try {
-            controller.close();
-          } catch {
-            // Already closed by the client disconnect path — safe to ignore.
-          }
+        try {
+          controller.close();
+        } catch {
+          // already closed by the client disconnect path
         }
       }
     },
   });
 
   return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
   });
 }

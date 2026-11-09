@@ -1,5 +1,4 @@
 export type PreviewQuality = "low" | "balanced" | "high";
-export type PreviewQualityMode = "auto" | PreviewQuality;
 
 export function initialPreviewQuality(cores: number, memoryGb?: number): PreviewQuality {
   if (cores <= 4 || (memoryGb !== undefined && memoryGb <= 4)) return "low";

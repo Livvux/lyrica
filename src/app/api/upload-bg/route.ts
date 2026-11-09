@@ -1,32 +1,24 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
-import { randomUUID } from "crypto";
 import { rateLimit } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/get-client-ip";
-import { startServerPerf } from "@/lib/perf";
+import { saveUpload } from "@/lib/save-upload";
 
-const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
+const MAX_BG_UPLOAD_BYTES = 50 * 1024 * 1024;
+const ALLOWED_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".mp4", ".webm"]);
 
 export async function POST(request: Request) {
-  const perf = startServerPerf("api.upload-bg");
   const clientIp = getClientIp(request);
   const limited = rateLimit("upload-bg", { windowMs: 60_000, max: 10, clientKey: clientIp });
-  if (limited) {
-    perf({ status: 429, clientIp });
-    return limited;
-  }
+  if (limited) return limited;
   try {
     const formData = await request.formData();
-    const file = formData.get("image") as File | null;
+    const file = formData.get("image");
 
-    if (!file) {
-      perf({ status: 400, reason: "missing-file", clientIp });
+    if (!(file instanceof File)) {
       return NextResponse.json({ error: "Kein Bild" }, { status: 400 });
     }
 
-    if (file.size > 50 * 1024 * 1024) {
-      perf({ status: 400, reason: "file-too-large", clientIp });
+    if (file.size > MAX_BG_UPLOAD_BYTES) {
       return NextResponse.json(
         { error: "Datei zu groß. Maximal 50 MB für Videos erlaubt." },
         { status: 400 }
@@ -36,35 +28,17 @@ export async function POST(request: Request) {
     const isImage = file.type.startsWith("image/");
     const isVideo = file.type.startsWith("video/");
     if (!isImage && !isVideo) {
-      perf({ status: 400, reason: "invalid-type", clientIp, fileType: file.type });
       return NextResponse.json(
         { error: "Nur Bild- oder Videodateien erlaubt." },
         { status: 400 }
       );
     }
 
-    await mkdir(TMP_DIR, { recursive: true });
-    const ALLOWED_EXTS = new Set([
-      ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif",
-      ".mp4", ".webm",
-    ]);
-    const rawExt = path.extname(file.name).toLowerCase() || (isVideo ? ".mp4" : ".jpg");
-    const ext = ALLOWED_EXTS.has(rawExt) ? rawExt : (isVideo ? ".mp4" : ".jpg");
-    const filename = `${randomUUID()}${ext}`;
-    const filePath = path.join(TMP_DIR, filename);
+    const filename = await saveUpload(file, ALLOWED_EXTS, isVideo ? ".mp4" : ".jpg");
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(filePath, buffer);
-
-    perf({
-      status: 200,
-      clientIp,
-      fileType: file.type || "unknown",
-      fileSizeMb: (file.size / (1024 * 1024)).toFixed(1),
-    });
     return NextResponse.json({ filename });
-  } catch {
-    perf({ status: 500, clientIp });
+  } catch (e) {
+    console.error("Background upload error:", e);
     return NextResponse.json({ error: "Upload fehlgeschlagen" }, { status: 500 });
   }
 }

@@ -84,6 +84,18 @@ function smoothData(data: number[]): number[] {
   });
 }
 
+function Glow({ id, std }: { id: string; std: number }) {
+  return (
+    <filter id={id}>
+      <feGaussianBlur stdDeviation={std} result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  );
+}
+
 type WaveColorLayer = { color: string; opacity: number; scale: number };
 
 // Layer scale/opacity presets (outermost → innermost)
@@ -194,45 +206,21 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
       <AbsoluteFill>
         <svg width="100%" height="100%" viewBox="0 0 1920 1080">
           <defs>
-            {/* Per-layer glow: outer layers get stronger blur */}
-            {layers.map((_, li) => {
-              const layerDepth = (layers.length - 1 - li) / (layers.length - 1);
-              const std = isDraft
-                ? 4 + layerDepth * 8 + bassEnergy * 6
-                : 6 + layerDepth * 14 + bassEnergy * 12;
-              return (
-                <filter id={`wave-glow-${li}`} key={`wg-${li}`}>
-                  <feGaussianBlur stdDeviation={std} result="blur" />
-                  <feMerge>
-                    <feMergeNode in="blur" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
-              );
-            })}
-            <filter id="ball-glow">
-              <feGaussianBlur stdDeviation={6 + bassEnergy * 12} result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
+            <Glow id="wave-glow" std={isDraft ? 8 + bassEnergy * 6 : 13 + bassEnergy * 12} />
+            <Glow id="ball-glow" std={6 + bassEnergy * 12} />
             <clipPath id="ball-clip">
               <circle cx={CX} cy={CY} r={radius - 2} />
             </clipPath>
           </defs>
 
-          {/* Wave layers — back (outermost/blue) to front (innermost/white) */}
-          {ringPaths.map((d, li) => (
-            <path
-              key={`wave-${li}`}
-              d={d}
-              fillRule="evenodd"
-              fill={layers[li].color}
-              opacity={layers[li].opacity}
-              filter={!minimal && li < layers.length - 1 ? `url(#wave-glow-${li})` : undefined}
-            />
-          ))}
+          {/* Wave layers back (outermost) to front; one shared blur pass instead of one per layer. */}
+          <g filter={minimal ? undefined : "url(#wave-glow)"}>
+            {ringPaths.slice(0, -1).map((d, li) => (
+              <path key={li} d={d} fillRule="evenodd" fill={layers[li].color} opacity={layers[li].opacity} />
+            ))}
+          </g>
+          <path d={ringPaths[ringPaths.length - 1]} fillRule="evenodd"
+            fill={layers[layers.length - 1].color} opacity={layers[layers.length - 1].opacity} />
 
           {centerBall}
         </svg>
@@ -245,26 +233,13 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   const bars = isDraft
     ? frequencyData.filter((_, i) => i % 2 === 0)
     : frequencyData;
-  const glowStd = 4 + bassEnergy * 8;
 
   return (
     <AbsoluteFill>
       <svg width="100%" height="100%" viewBox="0 0 1920 1080">
         <defs>
-          <filter id="bar-glow">
-            <feGaussianBlur stdDeviation={glowStd} result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="ball-glow">
-            <feGaussianBlur stdDeviation={6 + bassEnergy * 12} result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
+          <Glow id="bar-glow" std={4 + bassEnergy * 8} />
+          <Glow id="ball-glow" std={6 + bassEnergy * 12} />
           <clipPath id="ball-clip">
             <circle cx={CX} cy={CY} r={INNER_RADIUS - 2} />
           </clipPath>

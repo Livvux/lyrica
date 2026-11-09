@@ -23,7 +23,6 @@ export const Background: React.FC<{
     width: "100%",
     height: "100%",
     objectFit: "cover",
-    filter: brightness !== 1 ? `brightness(${brightness})` : undefined,
     transform: scale !== 1 ? `scale(${scale})` : undefined,
   };
 
@@ -44,7 +43,8 @@ export const Background: React.FC<{
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(0,0,0,0.3)",
+          // Brightening by thinning the 30% dim layer avoids a full-frame CSS filter on every frame.
+          background: `rgba(0,0,0,${Math.max(0, 1 - 0.7 * brightness)})`,
         }}
       />
     </AbsoluteFill>

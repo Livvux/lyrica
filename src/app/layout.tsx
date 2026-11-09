@@ -1,12 +1,18 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Lyrica – Lyrics Video Generator",
-  description: "Generiere automatisch Lyrics-Videos aus deinem Song.",
+  title: "Lyrica",
+  description: "Lyrics-Videos aus deinem Song.",
+  other: { "build-time": process.env.NEXT_PUBLIC_BUILD_TIME ?? "" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0a0a0a",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -16,11 +22,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="de">
-      <body className={`${inter.className} bg-black text-white antialiased`}>
+      <body className={inter.className}>
         {children}
-        <footer className="fixed bottom-0 inset-x-0 text-center text-[10px] text-white/20 py-1 pointer-events-none select-none">
-          build {process.env.NEXT_PUBLIC_BUILD_TIME}
-        </footer>
       </body>
     </html>
   );

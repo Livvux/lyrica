@@ -5,6 +5,7 @@ const STORAGE_KEY = "lyrica-session-v1";
 export interface PersistedState {
   lines: LyricLine[];
   audioUrl: string | null;
+  originalFilename?: string | null;
   durationSec: number;
   style: StyleConfig;
   lyricsActive: boolean;
@@ -25,13 +26,5 @@ export function loadPersistence(): PersistedState | null {
     return JSON.parse(raw) as PersistedState;
   } catch {
     return null;
-  }
-}
-
-export function clearPersistence(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignorieren
   }
 }

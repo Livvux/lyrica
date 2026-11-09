@@ -40,6 +40,8 @@ export function useBeatPulse(
     frame,
     audioData,
     numberOfSamples: 64,
+    // Smoothing runs three FFTs per frame; the fast FFT keeps that cheap in preview and every render tab.
+    optimizeFor: "speed",
   });
 
   // Average low-frequency bands (bass energy)

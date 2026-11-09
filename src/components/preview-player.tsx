@@ -5,19 +5,13 @@ import { Player } from "@remotion/player";
 import type { CallbackListener, PlayerRef } from "@remotion/player";
 import { LyricsVideo } from "@/remotion/lyrics-video";
 import { adaptPreviewQuality, initialPreviewQuality } from "@/lib/preview-quality";
-import type { PreviewQuality, PreviewQualityMode, QualitySample } from "@/lib/preview-quality";
+import type { PreviewQuality, QualitySample } from "@/lib/preview-quality";
 import type { VideoConfig } from "@/types/lyrics";
-
-const LABELS: Record<PreviewQualityMode, string> = {
-  auto: "Automatisch", low: "Sparsam", balanced: "Ausgewogen", high: "Volle Details",
-};
 
 function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
   const player = useRef<PlayerRef>(null);
-  const [mode, setMode] = useState<PreviewQualityMode>("auto");
-  const [automatic, setAutomatic] = useState<PreviewQuality>("balanced");
-  const [fps, setFps] = useState<number | null>(null);
-  const quality = mode === "auto" ? automatic : mode;
+  // Detail level follows measured playback smoothness; no manual knob.
+  const [quality, setQuality] = useState<PreviewQuality>("balanced");
   const inputProps = useMemo(() => ({ ...config, previewQuality: quality }), [config, quality]);
 
   useEffect(() => {
@@ -29,14 +23,14 @@ function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
       quality: initialPreviewQuality(navigator.hardwareConcurrency || 4, memory),
       slowWindows: 0, healthyWindows: 0,
     };
-    setAutomatic(state.quality);
+    setQuality(state.quality);
     let start = 0;
     let delivered = 0;
     let lastFrame = -1;
     let buffering = false;
     let rate = 1;
     const reset = () => { start = 0; delivered = 0; lastFrame = -1; };
-    const suspend = () => { reset(); setFps(null); };
+    const suspend = reset;
     const waiting = () => { buffering = true; suspend(); };
     const resume = () => { buffering = false; reset(); };
     const ratechange: CallbackListener<"ratechange"> = ({ detail }) => { rate = detail.playbackRate; reset(); };
@@ -49,11 +43,8 @@ function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
       const elapsed = now - start;
       if (elapsed < 3000) return;
       const measured = (delivered - 1) * 1000 / elapsed;
-      setFps(Math.round(measured));
-      if (mode === "auto") {
-        state = adaptPreviewQuality(state, measured / (config.fps * rate));
-        setAutomatic(state.quality);
-      }
+      state = adaptPreviewQuality(state, measured / (config.fps * rate));
+      setQuality(state.quality);
       reset();
     };
     instance.addEventListener("frameupdate", frameupdate);
@@ -74,10 +65,10 @@ function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
       instance.removeEventListener("ratechange", ratechange);
       document.removeEventListener("visibilitychange", suspend);
     };
-  }, [config.audioUrl, config.fps, mode]);
+  }, [config.audioUrl, config.fps]);
 
   return (
-    <section className="w-full overflow-hidden rounded-2xl border border-white/10" aria-label="Video-Vorschau">
+    <section className="overflow-hidden rounded-2xl border border-white/10 bg-black" aria-label="Vorschau">
       <div className="relative w-full" style={{ aspectRatio: `${config.width}/${config.height}` }}>
         <Player
           ref={player}
@@ -92,17 +83,6 @@ function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
           autoPlay={false}
           acknowledgeRemotionLicense
         />
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white/5 px-4 py-3">
-        <div>
-          <p className="text-xs text-white/80">Vorschau · {LABELS[quality]}{fps !== null ? ` · ${fps} fps` : ""}</p>
-          <p className="mt-1 text-xs text-white/45">Auto passt Details an dein Gerät an. Exportqualität bleibt separat.</p>
-        </div>
-        <select aria-label="Vorschauqualität" value={mode}
-          onChange={(event) => setMode(event.target.value as PreviewQualityMode)}
-          className="rounded-lg border border-white/15 bg-neutral-900 px-3 py-2 text-xs text-white">
-          {Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
       </div>
     </section>
   );

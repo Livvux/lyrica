@@ -1,7 +1,8 @@
 import OpenAI from "openai";
 import Groq from "groq-sdk";
 import { execFile } from "child_process";
-import { writeFile, readFile, unlink, mkdir, stat, rm } from "fs/promises";
+import { createReadStream } from "fs";
+import { stat, rm } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { promisify } from "util";
@@ -98,10 +99,6 @@ function filterHallucinatedWords(words: TranscriptionWord[]): TranscriptionWord[
   });
 }
 
-interface TranscriptionProvider {
-  transcribe(audioFile: File): Promise<TranscriptionResult>;
-}
-
 /**
  * Compress audio to mono 64kbps MP3 for smaller upload size.
  * Whisper handles low-bitrate audio well — no quality loss for transcription.
@@ -120,13 +117,10 @@ async function compressAudio(inputPath: string): Promise<string> {
 
 /**
  * Split audio into time-based chunks for files that exceed the API limit even after compression.
- * Returns array of { chunkPath, offsetSec }.
  */
-async function splitAudio(inputPath: string, durationSec: number): Promise<Array<{ chunkPath: string; offsetSec: number }>> {
-  const chunks: Array<{ chunkPath: string; offsetSec: number }> = [];
-  let offset = 0;
-
-  while (offset < durationSec) {
+async function splitAudio(inputPath: string, durationSec: number): Promise<Segment[]> {
+  const chunks: Segment[] = [];
+  for (let offset = 0; offset < durationSec; offset += CHUNK_DURATION_SEC) {
     const chunkPath = path.join(TMP_DIR, `chunk-${randomUUID()}.mp3`);
     await execFileAsync("ffmpeg", [
       "-i", inputPath,
@@ -137,10 +131,8 @@ async function splitAudio(inputPath: string, durationSec: number): Promise<Array
       "-f", "mp3",
       "-y", chunkPath,
     ]);
-    chunks.push({ chunkPath, offsetSec: offset });
-    offset += CHUNK_DURATION_SEC;
+    chunks.push({ path: chunkPath, offsetSec: offset, temporary: true });
   }
-
   return chunks;
 }
 
@@ -155,20 +147,9 @@ async function getAudioDuration(filePath: string): Promise<number> {
   return parseFloat(stdout.trim()) || 0;
 }
 
-/** Create a File object from a path on disk. */
-async function fileFromPath(filePath: string, name: string): Promise<File> {
-  const buffer = await readFile(filePath);
-  return new File([buffer], name, { type: "audio/mpeg" });
-}
-
-/** Silently remove a temp file. */
-async function cleanup(filePath: string) {
-  try { await unlink(filePath); } catch { /* ignore */ }
-}
-
-/** Silently remove a temp directory tree. */
-async function cleanupDir(dirPath: string) {
-  try { await rm(dirPath, { recursive: true, force: true }); } catch { /* ignore */ }
+/** Silently remove a temp file or directory tree. */
+async function cleanup(target: string) {
+  await rm(target, { recursive: true, force: true }).catch(() => {});
 }
 
 /**
@@ -200,36 +181,15 @@ async function separateVocals(inputPath: string): Promise<{ vocalsPath: string; 
     await stat(vocalsPath); // verify output exists
     return { vocalsPath, outDir };
   } catch {
-    await cleanupDir(outDir); // remove partial output on failure
+    await cleanup(outDir); // remove partial output on failure
     return null;
   }
 }
 
-/**
- * Attempt vocal separation before transcription.
- * Returns the vocals File if Demucs succeeds, or the original audioFile as fallback.
- * The returned `cleanupVocals` must be called in a finally block.
- */
-async function withVocals(audioFile: File): Promise<{ file: File; cleanupVocals: () => Promise<void> }> {
-  await mkdir(TMP_DIR, { recursive: true });
-
-  const ext = path.extname(audioFile.name) || ".mp3";
-  const inputPath = path.join(TMP_DIR, `vc-input-${randomUUID()}${ext}`);
-  const buffer = Buffer.from(await audioFile.arrayBuffer());
-  await writeFile(inputPath, buffer);
-
-  const result = await separateVocals(inputPath);
-  await cleanup(inputPath);
-
-  if (!result) {
-    return { file: audioFile, cleanupVocals: async () => {} };
-  }
-
-  const file = await fileFromPath(result.vocalsPath, "vocals.wav");
-  return {
-    file,
-    cleanupVocals: async () => cleanupDir(result.outDir),
-  };
+interface Segment {
+  path: string;
+  offsetSec: number;
+  temporary: boolean;
 }
 
 /**
@@ -238,161 +198,69 @@ async function withVocals(audioFile: File): Promise<{ file: File; cleanupVocals:
  * 2. If > 25MB, compress to mono 64kbps
  * 3. If still > 25MB after compression, split into chunks
  */
-async function prepareAudio(audioFile: File): Promise<Array<{ file: File; offsetSec: number; tempPath?: string }>> {
-  // Small files: send directly
-  if (audioFile.size <= MAX_UPLOAD_SIZE) {
-    return [{ file: audioFile, offsetSec: 0 }];
+async function prepareAudio(audioPath: string): Promise<Segment[]> {
+  if ((await stat(audioPath)).size <= MAX_UPLOAD_SIZE) {
+    return [{ path: audioPath, offsetSec: 0, temporary: false }];
   }
 
-  // Write to disk for ffmpeg processing
-  await mkdir(TMP_DIR, { recursive: true });
-  const inputPath = path.join(TMP_DIR, `input-${randomUUID()}.mp3`);
-  const buffer = Buffer.from(await audioFile.arrayBuffer());
-  await writeFile(inputPath, buffer);
-
-  // Try compression first
-  const compressedPath = await compressAudio(inputPath);
-  const compressedStat = await stat(compressedPath);
-  await cleanup(inputPath);
-
-  if (compressedStat.size <= MAX_UPLOAD_SIZE) {
-    const file = await fileFromPath(compressedPath, "audio.mp3");
-    return [{ file, offsetSec: 0, tempPath: compressedPath }];
+  const compressedPath = await compressAudio(audioPath);
+  if ((await stat(compressedPath)).size <= MAX_UPLOAD_SIZE) {
+    return [{ path: compressedPath, offsetSec: 0, temporary: true }];
   }
 
   // Compression wasn't enough — split into chunks
-  const durationSec = await getAudioDuration(compressedPath);
-  const chunks = await splitAudio(compressedPath, durationSec);
-  await cleanup(compressedPath);
-
-  const results: Array<{ file: File; offsetSec: number; tempPath: string }> = [];
-  for (const chunk of chunks) {
-    const file = await fileFromPath(chunk.chunkPath, "chunk.mp3");
-    results.push({ file, offsetSec: chunk.offsetSec, tempPath: chunk.chunkPath });
+  try {
+    return await splitAudio(compressedPath, await getAudioDuration(compressedPath));
+  } finally {
+    await cleanup(compressedPath);
   }
-
-  return results;
 }
 
-function createOpenAIProvider(): TranscriptionProvider {
-  const client = new OpenAI();
+type RawTranscription = {
+  text: string;
+  words?: Array<{ word: string; start: number; end: number }>;
+  duration?: number;
+};
 
-  async function transcribeSingle(audioFile: File): Promise<TranscriptionResult> {
-    const response = await client.audio.transcriptions.create({
-      file: audioFile,
+const transcribers: Record<TranscriptionResult["provider"], (audioPath: string) => Promise<RawTranscription>> = {
+  openai: (audioPath) =>
+    new OpenAI().audio.transcriptions.create({
+      file: createReadStream(audioPath),
       model: "whisper-1",
       response_format: "verbose_json",
       timestamp_granularities: ["word"],
-    });
-
-    const words: TranscriptionWord[] = (response.words ?? []).map((w) => ({
-      word: w.word,
-      startSec: w.start,
-      endSec: w.end,
-    }));
-
-    return {
-      text: response.text,
-      words,
-      durationSec: response.duration ?? 0,
-      provider: "openai",
-    };
-  }
-
-  return {
-    async transcribe(audioFile: File): Promise<TranscriptionResult> {
-      const { file: vocalFile, cleanupVocals } = await withVocals(audioFile);
-      const segments = await prepareAudio(vocalFile);
-      try {
-        return await transcribeAndMerge(segments, transcribeSingle, "openai");
-      } finally {
-        for (const seg of segments) {
-          if (seg.tempPath) await cleanup(seg.tempPath);
-        }
-        await cleanupVocals();
-      }
-    },
-  };
-}
-
-function createGroqProvider(): TranscriptionProvider {
-  const client = new Groq();
-
-  async function transcribeSingle(audioFile: File): Promise<TranscriptionResult> {
-    const response = await client.audio.transcriptions.create({
-      file: audioFile,
+    }),
+  groq: async (audioPath) =>
+    (await new Groq().audio.transcriptions.create({
+      file: createReadStream(audioPath),
       model: "whisper-large-v3-turbo",
       response_format: "verbose_json",
       timestamp_granularities: ["word"],
-    });
-
-    const raw = response as unknown as {
-      text: string;
-      words?: Array<{ word: string; start: number; end: number }>;
-      duration?: number;
-    };
-
-    const words: TranscriptionWord[] = (raw.words ?? []).map((w) => ({
-      word: w.word,
-      startSec: w.start,
-      endSec: w.end,
-    }));
-
-    return {
-      text: raw.text,
-      words,
-      durationSec: raw.duration ?? 0,
-      provider: "groq",
-    };
-  }
-
-  return {
-    async transcribe(audioFile: File): Promise<TranscriptionResult> {
-      const { file: vocalFile, cleanupVocals } = await withVocals(audioFile);
-      const segments = await prepareAudio(vocalFile);
-      try {
-        return await transcribeAndMerge(segments, transcribeSingle, "groq");
-      } finally {
-        for (const seg of segments) {
-          if (seg.tempPath) await cleanup(seg.tempPath);
-        }
-        await cleanupVocals();
-      }
-    },
-  };
-}
+    })) as unknown as RawTranscription,
+};
 
 /** Transcribe all segments, filter hallucinations, and merge with corrected timestamps. */
-async function transcribeAndMerge(
-  segments: Array<{ file: File; offsetSec: number; tempPath?: string }>,
-  transcribeFn: (file: File) => Promise<TranscriptionResult>,
-  provider: "openai" | "groq"
+async function transcribeSegments(
+  segments: Segment[],
+  provider: TranscriptionResult["provider"]
 ): Promise<TranscriptionResult> {
-  if (segments.length === 1) {
-    const result = await transcribeFn(segments[0].file);
-    result.words = filterHallucinatedWords(result.words);
-    result.text = result.words.map((w) => w.word).join(" ");
-    return result;
-  }
-
   const allWords: TranscriptionWord[] = [];
-  const allTexts: string[] = [];
   let totalDuration = 0;
 
   for (const segment of segments) {
-    const result = await transcribeFn(segment.file);
+    const raw = await transcribers[provider](segment.path);
+    const result: TranscriptionResult = {
+      text: raw.text,
+      words: (raw.words ?? []).map((w) => ({ word: w.word, startSec: w.start, endSec: w.end })),
+      durationSec: raw.duration ?? 0,
+      provider,
+    };
     totalDuration = Math.max(totalDuration, segment.offsetSec + result.durationSec);
 
     // Skip entire chunk if it's a hallucination (silent/instrumental section)
-    if (isHallucinatedResult(result)) {
-      // Skip hallucinated chunk (silent/instrumental section)
-      continue;
-    }
+    if (segments.length > 1 && isHallucinatedResult(result)) continue;
 
-    const filteredWords = filterHallucinatedWords(result.words);
-    allTexts.push(filteredWords.map((w) => w.word).join(" "));
-
-    for (const word of filteredWords) {
+    for (const word of filterHallucinatedWords(result.words)) {
       allWords.push({
         word: word.word,
         startSec: word.startSec + segment.offsetSec,
@@ -402,21 +270,25 @@ async function transcribeAndMerge(
   }
 
   return {
-    text: allTexts.join(" "),
+    text: allWords.map((w) => w.word).join(" "),
     words: allWords,
     durationSec: totalDuration,
     provider,
   };
 }
 
-export function getProvider(name?: string): TranscriptionProvider {
-  const providerName = name ?? process.env.TRANSCRIPTION_PROVIDER ?? "groq";
-
-  switch (providerName) {
-    case "openai":
-      return createOpenAIProvider();
-    case "groq":
-    default:
-      return createGroqProvider();
+/** Transcribe an audio file on disk with the configured provider (TRANSCRIPTION_PROVIDER). */
+export async function transcribeFile(audioPath: string): Promise<TranscriptionResult> {
+  const provider = process.env.TRANSCRIPTION_PROVIDER === "openai" ? "openai" : "groq";
+  const vocals = await separateVocals(audioPath);
+  let segments: Segment[] = [];
+  try {
+    segments = await prepareAudio(vocals?.vocalsPath ?? audioPath);
+    return await transcribeSegments(segments, provider);
+  } finally {
+    for (const segment of segments) {
+      if (segment.temporary) await cleanup(segment.path);
+    }
+    if (vocals) await cleanup(vocals.outDir);
   }
 }

@@ -11,10 +11,7 @@ interface State {
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = { hasError: false };
-  }
+  state: State = { hasError: false };
 
   static getDerivedStateFromError(): State {
     return { hasError: true };
@@ -25,22 +22,14 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-12 text-center">
-          <p className="text-sm text-white/60">
-            Etwas ist schiefgelaufen.
-          </p>
-          <button
-            onClick={() => this.setState({ hasError: false })}
-            className="rounded-lg bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/20"
-          >
-            Erneut versuchen
-          </button>
-        </div>
-      );
-    }
-
-    return this.props.children;
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div role="alert" className="flex aspect-video flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
+        <p className="text-sm text-white/70">Vorschau konnte nicht geladen werden.</p>
+        <button type="button" onClick={() => this.setState({ hasError: false })} className="btn">
+          Erneut versuchen
+        </button>
+      </div>
+    );
   }
 }

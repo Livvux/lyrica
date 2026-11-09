@@ -1,4 +1,4 @@
-import { useCurrentFrame, interpolate } from "remotion";
+import { useCurrentFrame, useVideoConfig, interpolate } from "remotion";
 import type { LyricLine, StyleConfig, TranscriptionWord } from "@/types/lyrics";
 
 interface BeatValues {
@@ -76,15 +76,16 @@ function TypewriterText({
 
   const visibleCount = Math.floor(progress * text.length);
 
+  // Hidden tail keeps the final layout stable without one span per character.
+  if (!handwritten) {
+    return <>{text.slice(0, visibleCount)}<span style={{ opacity: 0 }}>{text.slice(visibleCount)}</span></>;
+  }
+
   return (
     <>
       {text.split("").map((char, i) => {
         const visible = i < visibleCount;
         if (!visible) return <span key={i} style={{ opacity: 0 }}>{char}</span>;
-
-        if (!handwritten) {
-          return <span key={i}>{char}</span>;
-        }
 
         const isNew = i >= visibleCount - 2 && i < visibleCount;
         const charScale = isNew
@@ -126,12 +127,12 @@ function KaraokeText({
   activeColor: string;
   inactiveColor: string;
 }) {
-  const FPS = 30;
+  const { fps } = useVideoConfig();
   return (
     <>
       {words.map((word, i) => {
-        const wordStartFrame = Math.round(word.startSec * FPS);
-        const wordEndFrame = Math.max(Math.round(word.endSec * FPS), wordStartFrame + 1);
+        const wordStartFrame = Math.round(word.startSec * fps);
+        const wordEndFrame = Math.max(Math.round(word.endSec * fps), wordStartFrame + 1);
         const isActive = frame >= wordStartFrame && frame <= wordEndFrame;
         const isPast = frame > wordEndFrame;
 
@@ -152,7 +153,6 @@ function KaraokeText({
               color,
               display: "inline-block",
               transform: `scale(${scale})`,
-              transition: "color 0.1s",
               marginRight: i < words.length - 1 ? "0.3em" : 0,
             }}
           >

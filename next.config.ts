@@ -12,11 +12,6 @@ const nextConfig: NextConfig = {
     "@remotion/cli",
     "esbuild",
   ],
-  experimental: {
-    serverActions: {
-      bodySizeLimit: "500mb",
-    },
-  },
   async headers() {
     return [
       {

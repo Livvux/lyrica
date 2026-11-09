@@ -59,15 +59,15 @@ async function searchLrclib(
 }
 
 export async function POST(req: Request) {
-  let body: { originalFilename?: string };
+  let body: { originalFilename?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { originalFilename } = body;
-  const parsed = originalFilename ? parseFilename(originalFilename) : null;
+  const { originalFilename } = body ?? {};
+  const parsed = typeof originalFilename === "string" ? parseFilename(originalFilename.slice(0, 500)) : null;
 
   if (!parsed) {
     return NextResponse.json({ match: null });
