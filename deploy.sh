@@ -1,12 +1,12 @@
 #!/bin/bash
 # Deploy Lyrica to the Mac Mini (~/dev/lyrica, PM2 app "lyrica").
 # .env.local and ecosystem.config.js on the target are protected by .rsyncignore.
-# Runs locally when already on the Mac Mini, otherwise over ssh ($DEPLOY_HOST, default "macmini").
+# Runs locally when already on the Mac Mini, otherwise over ssh ($DEPLOY_HOST, default "mini").
 
 set -e
 
 APP_DIR="dev/lyrica"
-HOST="${DEPLOY_HOST:-macmini}"
+HOST="${DEPLOY_HOST:-mini}"
 
 if [ "$(hostname -s)" = "mini" ]; then
   TARGET="$HOME/$APP_DIR"

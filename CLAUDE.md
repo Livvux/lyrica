@@ -24,6 +24,8 @@ Production runs on **Mac Mini M4 Pro** via PM2. URL (tailnet only, via `tailscal
 ./deploy.sh           # Sync → install → build → restart (einziger Deploy-Befehl; läuft lokal, wenn man auf dem Mini ist, sonst per ssh $DEPLOY_HOST)
 ```
 
+**Auto-Deploy:** Jeder neue Commit auf `origin/main` geht automatisch live. Der LaunchAgent `com.lyrica.autodeploy` (`~/Library/LaunchAgents/`) ruft alle 5 Minuten `scripts/auto-deploy.sh` im eigenen Klon `~/dev/lyrica-deploy-src` auf und führt bei neuem SHA `deploy.sh` aus. Log: `~/.pm2/lyrica-autodeploy.log`, zuletzt deployter SHA: `~/.lyrica-deployed-sha`. Ein fehlgeschlagener Commit wird nicht erneut gebaut; der nächste Commit oder Löschen der SHA-Datei löst einen neuen Versuch aus.
+
 **Wichtig — nie manuell ändern:**
 - `.env.local` auf dem Mac Mini (`~/dev/lyrica/.env.local`) enthält die Production-API-Keys. Wird durch `.rsyncignore` und `.gitignore` geschützt und nie vom MacBook überschrieben.
 - `ecosystem.config.js` auf dem Mac Mini enthält PORT=3002, CHROME_EXECUTABLE und den ffmpeg-PATH. Ebenfalls nicht in git und nicht durch Rsync überschreibbar.
