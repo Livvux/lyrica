@@ -1,10 +1,10 @@
-import { AbsoluteFill, Audio, staticFile, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Audio, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { Background } from "./background";
 import { BeatParticles } from "./beat-particles";
 import { AudioVisualizer } from "./audio-visualizer";
 import { Watermark } from "./watermark";
 import { LyricsLineComponent } from "./lyrics-line";
-import { useBeatPulse, IDLE_BEAT } from "./use-beat-pulse";
+import { useBeatPulse, analyzedBeat, IDLE_BEAT } from "./use-beat-pulse";
 import type { BeatPulse } from "./use-beat-pulse";
 import {
   FilmGrainEffect,
@@ -122,8 +122,18 @@ const ReactiveVideo: React.FC<VideoConfig> = (config) => {
   return <VideoScene {...config} beat={beat} />;
 };
 
+const AnalyzedVideo: React.FC<VideoConfig> = (config) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const beat = config.audioAnalysis ? analyzedBeat(config.audioAnalysis, frame / fps,
+    config.style.effectIntensity, config.style.beatReactive, config.style.visualizerMode !== "none",
+    config.beatSensitivity, config.manualBeats) : IDLE_BEAT;
+  return <VideoScene {...config} beat={beat} />;
+};
+
 export const LyricsVideo: React.FC<VideoConfig> = (config) => {
   const needsAnalysis = config.audioUrl && (config.style.visualizerMode !== "none" ||
     (config.style.beatReactive && config.style.effectIntensity !== "off"));
-  return needsAnalysis ? <ReactiveVideo {...config} /> : <VideoScene {...config} beat={IDLE_BEAT} />;
+  if (!needsAnalysis) return <VideoScene {...config} beat={IDLE_BEAT} />;
+  return config.audioAnalysis ? <AnalyzedVideo {...config} /> : <ReactiveVideo {...config} />;
 };

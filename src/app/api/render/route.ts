@@ -1,8 +1,10 @@
+import { readBoundedJson, BodyTooLargeError } from "@/lib/bounded-json";
 import { mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import * as z from "zod";
+import { AudioAnalysisSchema } from "@/lib/audio-analysis-schema";
 import { renderVideo } from "@/lib/render-video";
 import { cleanupTmpFiles } from "@/lib/cleanup-tmp";
 import { rateLimit } from "@/lib/rate-limit";
@@ -67,10 +69,22 @@ const VideoConfigSchema = z.object({
   style: StyleConfigSchema,
   durationInFrames: z.number().int().positive().max(MAX_DURATION_FRAMES),
   fps: z.number().int().positive().max(60),
-  width: z.number().int().positive().max(3840),
-  height: z.number().int().positive().max(3840),
+  width: z.number().int().min(2).max(3840).multipleOf(2),
+  height: z.number().int().min(2).max(3840).multipleOf(2),
   renderQuality: z.enum(["fast", "balanced", "quality"]).optional(),
-});
+  audioAnalysis: AudioAnalysisSchema.optional(),
+  beatSensitivity: z.number().min(0.25).max(3).optional(),
+  manualBeats: z.array(z.number().min(0).max(7200)).max(60000).optional(),
+  clipStartFrame: z.number().int().nonnegative().optional(),
+  clipEndFrame: z.number().int().positive().optional(),
+}).refine((config) => {
+  const start = config.clipStartFrame ?? 0;
+  const end = config.clipEndFrame ?? config.durationInFrames;
+  const duration = config.durationInFrames / config.fps;
+  return start < end && end <= config.durationInFrames && duration <= 7200
+    && (!config.audioAnalysis || Math.abs(config.audioAnalysis.durationSec - duration) <= 0.1)
+    && (!config.manualBeats || config.manualBeats.every((beat, index, beats) => beat < duration && (index === 0 || beat > beats[index - 1])));
+}, { message: "Exportbereich muss innerhalb des Songs liegen." });
 
 const TMP_DIR = path.join(process.cwd(), "tmp", "lyrica");
 
@@ -80,7 +94,12 @@ export async function POST(request: Request) {
 
   cleanupTmpFiles();
 
-  const parsed = VideoConfigSchema.safeParse(await request.json().catch(() => null));
+  let body: unknown;
+  try { body = await readBoundedJson(request, 32 * 1024 * 1024); }
+  catch (error) {
+    return NextResponse.json({ error: error instanceof BodyTooLargeError ? "Exportdaten zu groß (maximal 32 MB)." : "Exportdaten nicht lesbar." }, { status: error instanceof BodyTooLargeError ? 413 : 400 });
+  }
+  const parsed = VideoConfigSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Ungültige Video-Konfiguration.", details: parsed.error.issues }, { status: 400 });
   }

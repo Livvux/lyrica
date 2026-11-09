@@ -8,6 +8,7 @@ import { bundle } from "@remotion/bundler";
 import type { WebpackConfiguration } from "@remotion/bundler";
 import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
 import { availableRenderCpus, chooseRenderConcurrency, memoryMb } from "./render-resources";
+import { getRenderPlan } from "./video-format";
 import { sanitizeFilename } from "@/lib/sanitize-filename";
 import type { RenderQuality, VideoConfig } from "@/types/lyrics";
 
@@ -111,13 +112,8 @@ export type RenderCallbacks = {
   signal?: AbortSignal;
 };
 
-// The composition is always laid out at the preview size; profiles only change output scale.
-const COMPOSITION_WIDTH = 1920;
-const COMPOSITION_HEIGHT = 1080;
-
 interface ProfileSettings {
-  width: number;
-  height: number;
+  scale: number;
   fps: number;
   videoBitrate: string;
   jpegQuality: number;
@@ -127,8 +123,7 @@ interface ProfileSettings {
 
 const PROFILES: Record<RenderQuality, ProfileSettings> = {
   fast: {
-    width: 1280,
-    height: 720,
+    scale: 2 / 3,
     fps: 24,
     videoBitrate: "5M",
     jpegQuality: 60,
@@ -139,8 +134,7 @@ const PROFILES: Record<RenderQuality, ProfileSettings> = {
     memPerWorkerMb: 1500,
   },
   balanced: {
-    width: 1920,
-    height: 1080,
+    scale: 1,
     fps: 30,
     videoBitrate: "10M",
     jpegQuality: 80,
@@ -148,8 +142,7 @@ const PROFILES: Record<RenderQuality, ProfileSettings> = {
     memPerWorkerMb: 2000,
   },
   quality: {
-    width: 1920,
-    height: 1080,
+    scale: 1,
     fps: 30,
     videoBitrate: "18M",
     jpegQuality: 95,
@@ -167,14 +160,15 @@ export async function renderVideo(
   const publicDir = path.join(process.cwd(), "public");
   const tmpDir = path.join(process.cwd(), "tmp", "lyrica");
   let bundleAssetDir: string | null = null;
+  let completed = false;
+  let cancelRender: (() => void) | undefined;
 
   const profile = PROFILES[config.renderQuality ?? "balanced"];
-  const renderWidth = profile.width;
-  const renderHeight = profile.height;
   const renderFps = profile.fps;
+  const plan = getRenderPlan(config, renderFps, profile.scale);
 
   const durationSec = config.durationInFrames / config.fps;
-  const renderFrameCount = Math.ceil(durationSec * renderFps);
+  const renderFrameCount = plan.durationInFrames;
 
 
   const audioFilename = toSafeAssetName(config.audioUrl.split("/").pop() ?? "");
@@ -186,6 +180,7 @@ export async function renderVideo(
     if (signal?.aborted) throw new Error("Render abgebrochen.");
 
     const bundleLocation = await getOrCreateBundle(onProgress);
+    signal?.throwIfAborted();
     onProgress?.({ phase: "bundling", progress: 1 });
 
     // Assets must live under public/ — the render page resolves asset URLs
@@ -215,7 +210,7 @@ export async function renderVideo(
       if (bgSrc) {
         const bgDest = path.join(bundleAssetDir, bgImageBasename);
         if (config.style.bgType === "video") await copyFile(bgSrc, bgDest);
-        else await resizeBgIfNeeded(bgSrc, bgDest, renderWidth, renderHeight);
+        else await resizeBgIfNeeded(bgSrc, bgDest, plan.outputWidth, plan.outputHeight);
         bgImageForRender = `/${assetDirName}/${bgImageBasename}`;
       } else {
         console.warn(`[render] Hintergrund nicht gefunden: ${bgImageBasename}`);
@@ -247,8 +242,10 @@ export async function renderVideo(
       })),
       audioUrl: audioAssetPath,
       style: { ...config.style, bgImage: bgImageForRender, customLogo: logoForRender },
-      width: COMPOSITION_WIDTH,
-      height: COMPOSITION_HEIGHT,
+      width: plan.width,
+      height: plan.height,
+      clipStartFrame: undefined,
+      clipEndFrame: undefined,
       fps: renderFps,
       durationInFrames: renderFrameCount,
     };
@@ -256,6 +253,7 @@ export async function renderVideo(
     const inputProps = renderConfig as unknown as Record<string, unknown>;
     const browserExecutable = resolveBrowserExecutable();
 
+    signal?.throwIfAborted();
     const composition = await selectComposition({
       serveUrl: bundleLocation,
       id: "LyricsVideo",
@@ -274,11 +272,12 @@ export async function renderVideo(
 
     // Bridge AbortSignal to Remotion's cancel mechanism
     const { cancelSignal, cancel } = makeCancelSignal();
+    cancelRender = cancel;
     if (signal) {
       if (signal.aborted) {
         cancel();
       } else {
-        signal.addEventListener("abort", () => cancel(), { once: true });
+        signal.addEventListener("abort", cancel, { once: true });
       }
     }
 
@@ -290,7 +289,8 @@ export async function renderVideo(
       outputLocation: outputPath,
       inputProps,
       concurrency,
-      scale: renderWidth / composition.width,
+      scale: plan.scale,
+      frameRange: plan.frameRange,
       browserExecutable,
       hardwareAcceleration: "if-possible",
       timeoutInMilliseconds: 300_000,
@@ -308,10 +308,13 @@ export async function renderVideo(
     });
 
     const totalTimeSec = (Date.now() - renderStart) / 1000;
-    console.log(`[render] ${renderFrameCount} frames in ${totalTimeSec.toFixed(1)}s (${(renderFrameCount / totalTimeSec).toFixed(1)} fps), concurrency=${concurrency}`);
+    console.log(`[render] ${plan.exportedFrameCount} frames in ${totalTimeSec.toFixed(1)}s (${(plan.exportedFrameCount / totalTimeSec).toFixed(1)} fps), concurrency=${concurrency}`);
+    completed = true;
 
     return outputPath;
   } finally {
+    if (cancelRender) signal?.removeEventListener("abort", cancelRender);
+    if (!completed) await rm(outputPath, { force: true }).catch(() => {});
     renderInProgress = false;
     if (bundleAssetDir) {
       await rm(bundleAssetDir, { recursive: true, force: true }).catch(() => {});

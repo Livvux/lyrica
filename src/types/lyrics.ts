@@ -1,3 +1,5 @@
+import type { AudioAnalysis } from "../lib/audio-analysis";
+
 export interface TranscriptionWord {
   word: string;
   startSec: number;
@@ -214,6 +216,11 @@ export const STYLE_PRESETS: StylePreset[] = [
 export type RenderQuality = "fast" | "balanced" | "quality";
 
 export interface VideoConfig {
+  clipStartFrame?: number;
+  clipEndFrame?: number;
+  audioAnalysis?: AudioAnalysis;
+  beatSensitivity?: number;
+  manualBeats?: number[];
   lines: LyricLine[];
   audioUrl: string;
   style: StyleConfig;

@@ -12,11 +12,13 @@ interface LyricsEditorProps {
   canUndo: boolean;
   canRedo: boolean;
   onDeactivate: () => void;
+  durationInFrames: number;
 }
 
-export function LyricsEditor({ lines, onChange, onUndo, onRedo, canUndo, canRedo, onDeactivate }: LyricsEditorProps) {
+export function LyricsEditor({ lines, onChange, onUndo, onRedo, canUndo, canRedo, onDeactivate, durationInFrames }: LyricsEditorProps) {
   function updateText(index: number, text: string) {
-    onChange(lines.map((line, i) => (i === index ? { ...line, text } : line)));
+    // Existing word alignment no longer describes edited text.
+    onChange(lines.map((line, i) => (i === index ? { ...line, text, words: undefined } : line)));
   }
 
   function removeLine(index: number) {
@@ -26,14 +28,17 @@ export function LyricsEditor({ lines, onChange, onUndo, onRedo, canUndo, canRedo
   function addLine(afterIndex: number) {
     const prev = lines[afterIndex];
     const next = lines[afterIndex + 1];
-    const startSec = prev ? prev.endSec : 0;
-    const endSec = next ? next.startSec : startSec + 3;
+    const startFrame = prev?.endFrame ?? 0;
+    const endFrame = Math.min(next?.startFrame ?? durationInFrames, startFrame + 3 * FPS);
+    if (endFrame <= startFrame) return;
+    const startSec = startFrame / FPS;
+    const endSec = endFrame / FPS;
     const newLine: LyricLine = {
       text: "",
       startSec,
       endSec,
-      startFrame: Math.round(startSec * FPS),
-      endFrame: Math.round(endSec * FPS),
+      startFrame,
+      endFrame,
       words: [],
     };
     onChange([...lines.slice(0, afterIndex + 1), newLine, ...lines.slice(afterIndex + 1)]);
@@ -55,7 +60,7 @@ export function LyricsEditor({ lines, onChange, onUndo, onRedo, canUndo, canRedo
       </div>
 
       {lines.length === 0 ? (
-        <p className="py-6 text-center text-sm text-white/40">Keine Zeilen</p>
+        <p className="py-6 text-center text-sm text-white/60">Keine Zeilen</p>
       ) : (
         <ol className="-mx-1 flex max-h-[28rem] flex-col overflow-y-auto px-1">
           {lines.map((line, i) => (
@@ -63,7 +68,7 @@ export function LyricsEditor({ lines, onChange, onUndo, onRedo, canUndo, canRedo
               key={`${line.startSec}-${line.endSec}`}
               className="group flex items-center gap-2 rounded-lg px-2 transition focus-within:bg-white/[0.06] hover:bg-white/[0.04]"
             >
-              <span className="w-12 shrink-0 text-xs tabular-nums text-white/35">{formatTime(line.startSec)}</span>
+              <span className="w-12 shrink-0 text-xs tabular-nums text-white/60">{formatTime(line.startSec)}</span>
               <input
                 type="text"
                 aria-label={`Zeile ${i + 1}`}

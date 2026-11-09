@@ -14,8 +14,11 @@ interface HistoryState<T> {
 export function useHistory<T>(initial: T) {
   const [state, setState] = useState<HistoryState<T>>({ past: [], value: initial, future: [] });
 
-  const set = useCallback((next: T) => {
-    setState((s) => ({ past: [...s.past.slice(-(MAX_HISTORY - 1)), s.value], value: next, future: [] }));
+  const set = useCallback((next: T | ((previous: T) => T)) => {
+    setState((s) => {
+      const value = typeof next === "function" ? (next as (previous: T) => T)(s.value) : next;
+      return Object.is(value, s.value) ? s : { past: [...s.past.slice(-(MAX_HISTORY - 1)), s.value], value, future: [] };
+    });
   }, []);
 
   /** Replace the value and drop history (e.g. restoring a saved session or loading a new song). */

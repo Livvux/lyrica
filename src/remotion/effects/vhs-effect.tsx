@@ -1,4 +1,4 @@
-import { AbsoluteFill, useCurrentFrame } from "remotion";
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
 import type { EffectIntensity } from "@/types/lyrics";
 
 interface VhsEffectProps {
@@ -7,9 +7,10 @@ interface VhsEffectProps {
 
 export const VhsEffect: React.FC<VhsEffectProps> = ({ intensity }) => {
   const frame = useCurrentFrame();
+  const { height } = useVideoConfig();
   const noiseOpacity = intensity === "strong" ? 0.12 : 0.06;
   const scanlineOpacity = intensity === "strong" ? 0.2 : 0.1;
-  const trackingY = (frame * 3) % 1080;
+  const trackingY = (frame * 3) % height;
   // Static id so React reuses the same <filter> node across frames — only
   // the feTurbulence `seed` below needs to change per frame. A per-frame id
   // forced Chromium to rebuild the whole full-screen turbulence filter graph

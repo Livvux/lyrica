@@ -422,7 +422,7 @@ function Slider({ label, unit = "", format = String, onChange, ...range }: {
     <div className="field">
       <div className="flex items-baseline justify-between">
         <label htmlFor={id} className="label">{label}</label>
-        <output htmlFor={id} className="text-xs tabular-nums text-white/40">{format(range.value)}{unit}</output>
+        <output htmlFor={id} className="text-xs tabular-nums text-white/60">{format(range.value)}{unit}</output>
       </div>
       <input id={id} type="range" {...range} onChange={(e) => onChange(Number(e.target.value))} />
     </div>

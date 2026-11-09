@@ -18,6 +18,10 @@ function getAudioDuration(file: File): Promise<number> {
         reject(new Error("Audio-Dauer konnte nicht ermittelt werden."));
         return;
       }
+      if (audio.duration > 7200) {
+        reject(new Error("Audio darf maximal 120 Minuten lang sein."));
+        return;
+      }
       resolve(audio.duration);
     });
     audio.addEventListener("error", () => {
