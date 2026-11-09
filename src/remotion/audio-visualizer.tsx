@@ -17,8 +17,6 @@ interface AudioVisualizerProps {
 
 const NUM_BARS_FULL = 64;
 const NUM_BARS_DRAFT = 32;
-const CX = 960;
-const CY = 540;
 const INNER_RADIUS = 140;
 const MAX_BAR_LENGTH = 200;
 const BAR_WIDTH = 4;
@@ -123,7 +121,12 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   waveConfig: wc,
 }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width, height } = useVideoConfig();
+  const unit = Math.min(width, height) / 1080;
+  const sceneWidth = width / unit;
+  const sceneHeight = height / unit;
+  const CX = sceneWidth / 2;
+  const CY = sceneHeight / 2;
   if (mode === "none") return null;
 
   const waveConfig = wc ?? DEFAULT_WAVE_CONFIG;
@@ -166,17 +169,18 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
     const layers = minimal ? 2 : isDraft ? 3 : 5;
     return (
       <AbsoluteFill>
-        <svg width="100%" height="100%" viewBox="0 0 1920 1080">
+        <svg width="100%" height="100%" viewBox={`0 0 ${sceneWidth} ${sceneHeight}`}>
           <defs>
             <linearGradient id="spectrum-fill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={monoColor} />
               <stop offset="100%" stopColor={monoColor} stopOpacity="0.15" />
             </linearGradient>
           </defs>
+          <g transform={`translate(0, ${CY - 540}) scale(${sceneWidth / 1920}, 1)`}>
           {mode === "waves" ? Array.from({ length: layers }, (_, layer) => {
             const points = flowingWavePath(frequencyData, samples, time, layer, waveConfig.gain, waveConfig.spread, bassEnergy);
             return <g key={layer}>
-              <path d={`${points} L1920,1080 L0,1080 Z`} fill={waveConfig.colors[layer]} opacity={0.07} />
+              <path d={`${points} L1920,${sceneHeight - CY + 540} L0,${sceneHeight - CY + 540} Z`} fill={waveConfig.colors[layer]} opacity={0.07} />
               <path d={points} fill="none" stroke={waveConfig.colors[layer]} strokeWidth={3 + layer} opacity={0.85} strokeLinejoin="round" />
             </g>;
           }) : Array.from({ length: samples }, (_, i) => {
@@ -186,6 +190,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
             return <rect key={i} x={180 + i * spacing} y={760 - height} width={spacing * 0.65}
               height={height} rx={spacing * 0.2} fill="url(#spectrum-fill)" />;
           })}
+          </g>
         </svg>
       </AbsoluteFill>
     );
@@ -197,14 +202,17 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
     const smoothed = smoothData(smoothData(frequencyData));
     const layers = getWaveLayers(waveConfig.colors, bassEnergy).filter((_, i) => !minimal || i % 2 === 0);
 
-    // Build donut ring paths for each color layer (outer wave spline + inner circle cutout)
+    // Keep the loudest outer ring and its glow inside the shortest side's safe area.
+    const peak = Math.max(1, ...smoothed);
+    const maxLayerScale = Math.max(...layers.map((layer) => layer.scale));
+    const safeGain = Math.min(waveConfig.gain, Math.max(0, Math.min(sceneWidth, sceneHeight) * 0.44 - radius) / (peak * maxLayerScale));
     const ringPaths = layers.map((layer) =>
-      buildWaveRingPath(smoothed, numPts, CX, CY, radius, waveConfig.gain, layer.scale, waveConfig.spread)
+      buildWaveRingPath(smoothed, numPts, CX, CY, radius, safeGain, layer.scale, waveConfig.spread)
     );
 
     return (
       <AbsoluteFill>
-        <svg width="100%" height="100%" viewBox="0 0 1920 1080">
+        <svg width="100%" height="100%" viewBox={`0 0 ${sceneWidth} ${sceneHeight}`}>
           <defs>
             <Glow id="wave-glow" std={isDraft ? 8 + bassEnergy * 6 : 13 + bassEnergy * 12} />
             <Glow id="ball-glow" std={6 + bassEnergy * 12} />
@@ -236,7 +244,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
 
   return (
     <AbsoluteFill>
-      <svg width="100%" height="100%" viewBox="0 0 1920 1080">
+      <svg width="100%" height="100%" viewBox={`0 0 ${sceneWidth} ${sceneHeight}`}>
         <defs>
           <Glow id="bar-glow" std={4 + bassEnergy * 8} />
           <Glow id="ball-glow" std={6 + bassEnergy * 12} />

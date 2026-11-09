@@ -170,6 +170,8 @@ export const LyricsLineComponent: React.FC<{
   beat: BeatValues;
 }> = ({ line, style, beat }) => {
   const frame = useCurrentFrame();
+  const { width, height } = useVideoConfig();
+  const unit = Math.min(width, height) / 1080;
   const lineDuration = line.endFrame - line.startFrame;
 
   if (frame < line.startFrame || frame > line.endFrame) {
@@ -182,7 +184,7 @@ export const LyricsLineComponent: React.FC<{
 
   const glowShadow =
     beat.glowOpacity > 0
-      ? `, 0 0 20px ${style.textColor}${Math.round(beat.glowOpacity * 255).toString(16).padStart(2, "0")}`
+      ? `, 0 0 20px ${style.textColor}${Math.round(Math.min(1, Math.max(0, beat.glowOpacity)) * 255).toString(16).padStart(2, "0")}`
       : "";
 
   const isCharAnim = variant === "typewriter" || variant === "handwritten";
@@ -199,17 +201,19 @@ export const LyricsLineComponent: React.FC<{
         justifyContent: "center",
         alignItems: "center",
         opacity,
+        padding: `${height * 0.1}px ${width * 0.1}px`,
       }}
     >
       <span
         style={{
           color: style.textColor,
-          fontSize: style.fontSize,
+          fontSize: style.fontSize * unit,
           fontFamily: `"${style.fontFamily}", sans-serif`,
           fontWeight: 700,
           textAlign: "center",
           textShadow: `2px 2px 10px rgba(0,0,0,0.5)${glowShadow}`,
-          maxWidth: "80%",
+          maxWidth: "100%",
+          overflowWrap: "anywhere",
           lineHeight: 1.2,
           transform: combinedTransform,
         }}

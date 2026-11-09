@@ -33,7 +33,7 @@ Build a native macOS application with `pnpm macos:build`, then open
 
 Requirements
 
-Use Node.js 22 and pnpm 9 to match the included Dockerfile. You also need FFmpeg, including ffprobe, available on your PATH, and a Chrome/Chromium browser for server-side rendering.
+Local verification uses Node.js 24 and pnpm 12.9.1. The existing Dockerfile still pins older tooling and needs alignment with `pnpm-workspace.yaml` before rebuilding it. You also need FFmpeg, including ffprobe, available on your PATH, and a Chrome/Chromium browser for server-side rendering.
 
 The commands below assume a macOS or Linux shell. Native Windows setup is not documented; use a Linux environment such as WSL2 when following these instructions.
 
@@ -93,7 +93,7 @@ Make your first video
 
 Start with a short audio clip while checking your installation. Singing, overlapping vocals, effects, and instrumental sections can produce transcription mistakes; review the words before publishing.
 
-The lyric editor supports text changes and line insertion/removal. It is not a full timing editor: changing text does not regenerate word alignment.
+The waveform timeline supports frame-accurate lyric movement/resizing, seeking, snapping, zoom and clip selection. Undo/redo also covers styles and format changes. Text edits clear obsolete word alignment; moving/resizing a line adjusts its existing word times. See [editor workflow and verification](docs/editor-upgrade.md).
 
 Export profiles
 
@@ -103,7 +103,7 @@ Export profiles
 |Balanced / Ausgewogen|1920 × 1080|Default export profile.                                                            |
 |Quality / Qualität   |1920 × 1080|Higher-bitrate output and higher-quality intermediate frames.                      |
 
-The current profiles target landscape video. Rendering speed depends on the audio duration, selected effects, browser, CPU, and available memory.
+Choose16:9,9:16,1:1 or4:5. The profile resolutions above describe16:9; other formats retain their aspect ratio, with a1080-pixel short side (720 for Fast). Rendering speed depends on the audio duration, selected effects, browser, CPU, and available memory.
 
 The preview starts in Auto mode. It uses CPU/memory hints for its initial detail budget, then measures delivered Player frames during playback. Two slow three-second windows lower detail; six healthy windows allow an upgrade. Pauses, seeks, buffering, and hidden tabs do not count toward a sample. Low detail removes visualizer blur and particles; balanced detail reduces geometry; full detail restores the complete scene. There is no manual override. Preview detail never changes the selected export profile.
 
@@ -205,7 +205,7 @@ Access and storage
 
 Keep the app on a trusted network or behind authentication. Before opening it to other users, review upload handling, request limits, rendering concurrency, proxy timeouts, and filesystem access. Built-in rate limiting is not a substitute for access control or per-user isolation.
 
-Uploaded media and rendered files are stored under tmp/lyrica on the server. The editor also saves state in browser local storage. That browser state is not a backup of the media files; keep your original audio and download finished exports.
+Uploaded media and rendered files are stored under tmp/lyrica on the server. The editor saves validated state in browser local storage and backs up uploaded media locally in IndexedDB, allowing expired server media to be restored on this device. Browser storage can be evicted and is not a portable project backup; keep your original audio and download finished exports.
 
 Self-hosting does not make the optional integrations offline. Transcription sends audio to the selected provider; reference lookups send song metadata; mix recognition sends audio fingerprints to AcoustID. Review the relevant service terms before processing sensitive or unreleased material.
 

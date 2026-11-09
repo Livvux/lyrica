@@ -1,18 +1,32 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Player } from "@remotion/player";
+import type { RefObject } from "react";
+import { Player, Thumbnail } from "@remotion/player";
 import type { CallbackListener, PlayerRef } from "@remotion/player";
 import { LyricsVideo } from "@/remotion/lyrics-video";
 import { adaptPreviewQuality, initialPreviewQuality } from "@/lib/preview-quality";
 import type { PreviewQuality, QualitySample } from "@/lib/preview-quality";
 import type { VideoConfig } from "@/types/lyrics";
 
-function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
-  const player = useRef<PlayerRef>(null);
+function PreviewPlayerComponent({ config, playerRef, onFrameChange }: { config: VideoConfig; playerRef?: RefObject<PlayerRef | null>; onFrameChange?: (frame: number) => void }) {
+  const localPlayer = useRef<PlayerRef>(null);
+  const player = playerRef ?? localPlayer;
   // Detail level follows measured playback smoothness; no manual knob.
   const [quality, setQuality] = useState<PreviewQuality>("balanced");
   const inputProps = useMemo(() => ({ ...config, previewQuality: quality }), [config, quality]);
+  const singleFrame = (config.clipEndFrame ?? config.durationInFrames) - (config.clipStartFrame ?? 0) === 1;
+
+  useEffect(() => {
+    const instance = player.current;
+    if (!instance) return;
+    const update: CallbackListener<"frameupdate"> = ({ detail }) => onFrameChange?.(detail.frame);
+    instance.addEventListener("frameupdate", update);
+    const start = config.clipStartFrame ?? 0;
+    const end = (config.clipEndFrame ?? config.durationInFrames) - 1;
+    if (instance.getCurrentFrame() < start || instance.getCurrentFrame() > end) instance.seekTo(start);
+    return () => instance.removeEventListener("frameupdate", update);
+  }, [player, onFrameChange, config.clipStartFrame, config.clipEndFrame, config.durationInFrames]);
 
   useEffect(() => {
     const instance = player.current;
@@ -23,7 +37,8 @@ function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
       quality: initialPreviewQuality(navigator.hardwareConcurrency || 4, memory),
       slowWindows: 0, healthyWindows: 0,
     };
-    setQuality(state.quality);
+    let disposed = false;
+    queueMicrotask(() => { if (!disposed) setQuality(state.quality); });
     let start = 0;
     let delivered = 0;
     let lastFrame = -1;
@@ -56,6 +71,7 @@ function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
     instance.addEventListener("ratechange", ratechange);
     document.addEventListener("visibilitychange", suspend);
     return () => {
+      disposed = true;
       instance.removeEventListener("frameupdate", frameupdate);
       instance.removeEventListener("play", reset);
       instance.removeEventListener("pause", suspend);
@@ -65,16 +81,21 @@ function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
       instance.removeEventListener("ratechange", ratechange);
       document.removeEventListener("visibilitychange", suspend);
     };
-  }, [config.audioUrl, config.fps]);
+  }, [config.audioUrl, config.fps, player, singleFrame]);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-white/10 bg-black" aria-label="Vorschau">
-      <div className="relative w-full" style={{ aspectRatio: `${config.width}/${config.height}` }}>
-        <Player
+      <div className="relative mx-auto w-full" style={{ aspectRatio: `${config.width}/${config.height}`, maxHeight: "60vh", maxWidth: `min(100%, ${60 * config.width / config.height}vh)` }}>
+        {singleFrame ? <Thumbnail component={LyricsVideo} inputProps={inputProps}
+          frameToDisplay={config.clipStartFrame ?? 0} durationInFrames={config.durationInFrames}
+          fps={config.fps} compositionWidth={config.width} compositionHeight={config.height}
+          style={{ width: "100%", height: "100%" }} /> : <Player
           ref={player}
           component={LyricsVideo}
           inputProps={inputProps}
           durationInFrames={config.durationInFrames}
+          inFrame={config.clipStartFrame ?? 0}
+          outFrame={(config.clipEndFrame ?? config.durationInFrames) - 1}
           fps={config.fps}
           compositionWidth={config.width}
           compositionHeight={config.height}
@@ -82,7 +103,7 @@ function PreviewPlayerComponent({ config }: { config: VideoConfig }) {
           controls
           autoPlay={false}
           acknowledgeRemotionLicense
-        />
+        />}
       </div>
     </section>
   );

@@ -37,7 +37,7 @@ export const Background: React.FC<{
           />
         </Loop>
       ) : (
-        <Img src={resolvedSrc} style={mediaStyle} />
+        <Img alt="" src={resolvedSrc} style={mediaStyle} />
       )}
       <div
         style={{
