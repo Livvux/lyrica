@@ -39,7 +39,7 @@ The render API validates dimensions, intervals, finite bounded analysis arrays a
 
 ## Verification and benchmarks
 
-Run `pnpm type-check`, `pnpm lint`, `pnpm test`, and `pnpm build`. CI now runs those commands on PRs and main; it does not deploy.
+Run `pnpm type-check`, `pnpm lint`, `pnpm test`, and `pnpm build`. CI uses Node.js 24 and pnpm 12.9.1 to match the verified local toolchain and runs those commands on PRs and main; it does not deploy.
 
 For reproducible real exports, start a disposable **local** production server:
 

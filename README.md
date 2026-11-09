@@ -33,7 +33,7 @@ Build a native macOS application with `pnpm macos:build`, then open
 
 Requirements
 
-Use Node.js 22 and pnpm 9 to match the included Dockerfile. You also need FFmpeg, including ffprobe, available on your PATH, and a Chrome/Chromium browser for server-side rendering.
+Local verification uses Node.js 24 and pnpm 12.9.1. The existing Dockerfile still pins older tooling and needs alignment with `pnpm-workspace.yaml` before rebuilding it. You also need FFmpeg, including ffprobe, available on your PATH, and a Chrome/Chromium browser for server-side rendering.
 
 The commands below assume a macOS or Linux shell. Native Windows setup is not documented; use a Linux environment such as WSL2 when following these instructions.
 
