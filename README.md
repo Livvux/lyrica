@@ -17,7 +17,7 @@ Features
 |Text animation          |Choose drift, zoom, slide, typewriter, handwritten-style, or karaoke animation. Adjust fonts, text size, and colors.           |
 |Backgrounds and branding|Upload image or video backgrounds and a custom logo. Configure logo size and watermark visibility.                             |
 |Visual effects          |Apply glitch, VHS, film grain, chromatic aberration, or camera shake. Start with a style preset or configure the look yourself.|
-|Preview and export      |Preview in the browser and render an H.264 MP4 with progress updates, logs, and rendering metrics.                             |
+|Preview and export      |Preview in the browser and render an H.264 MP4 with progress, time remaining, and cancel.                                      |
 
 The app also includes reference-lyrics checks and a mix-recognition workflow. These depend on external services and should be reviewed rather than treated as authoritative results. See Optional integrations.
 
@@ -74,7 +74,7 @@ OPENAI_API_KEY=your_openai_api_key
 
 The implementation uses whisper-large-v3-turbo on Groq and whisper-1 on OpenAI. Audio is sent to the selected provider when transcription is requested. Provider usage limits and charges may apply.
 
-The checked-in .env.example currently omits both transcription API keys. Use the minimal examples above rather than relying on that template alone. Do not commit .env.local or put secret keys in NEXT_PUBLIC_* variables.
+.env.example lists every supported variable. Do not commit .env.local or put secret keys in NEXT_PUBLIC_* variables.
 
 Provider selection and audio processing are implemented in transcription.ts.
 
@@ -105,7 +105,7 @@ Export profiles
 
 The current profiles target landscape video. Rendering speed depends on the audio duration, selected effects, browser, CPU, and available memory.
 
-The preview starts in Auto mode. It uses CPU/memory hints for its initial detail budget, then measures delivered Player frames during playback. Two slow three-second windows lower detail; six healthy windows allow an upgrade. Pauses, seeks, buffering, and hidden tabs do not count toward a sample. Low detail removes visualizer blur and particles; balanced detail reduces geometry; full detail restores the complete scene. You can override Auto in the preview controls. Preview settings never change the selected export profile.
+The preview starts in Auto mode. It uses CPU/memory hints for its initial detail budget, then measures delivered Player frames during playback. Two slow three-second windows lower detail; six healthy windows allow an upgrade. Pauses, seeks, buffering, and hidden tabs do not count toward a sample. Low detail removes visualizer blur and particles; balanced detail reduces geometry; full detail restores the complete scene. There is no manual override. Preview detail never changes the selected export profile.
 
 Lyrica selects export concurrency using available CPU parallelism, cgroup CPU quotas, available memory (including container limits), and an estimate of decoded audio memory per worker. It reserves memory and a CPU thread for the rest of the app. A process accepts one export at a time to avoid overcommitting resources. Multiple server processes need an external shared job queue or resource isolation. Hardware encoding is used when Remotion supports it on the host, with software fallback. These are conservative resource budgets, not a guarantee against exhaustion for arbitrary media.
 
@@ -233,7 +233,7 @@ pnpm type-check
 # Stop the development server before this command:
 pnpm build
 
-Run `pnpm test` for media delivery, preview adaptation, and export resource-budget regression tests. The root test-*.ts files remain manual developer scripts. Also check a short visualizer-only export and, for transcription changes, the lyrics workflow with your own test audio.
+Run `pnpm test` for media delivery, preview adaptation, and export resource-budget regression tests. Also check a short visualizer-only export and, for transcription changes, the lyrics workflow with your own test audio.
 
 Contributing
 

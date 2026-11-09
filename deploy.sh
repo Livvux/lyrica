@@ -1,18 +1,28 @@
 #!/bin/bash
-# Deploy Lyrica to Mac Mini
-# Schützt .env.local und ecosystem.config.js auf dem Ziel — werden nie überschrieben.
+# Deploy Lyrica to the Mac Mini (~/dev/lyrica, PM2 app "lyrica").
+# .env.local and ecosystem.config.js on the target are protected by .rsyncignore.
+# Runs locally when already on the Mac Mini, otherwise over ssh ($DEPLOY_HOST, default "macmini").
 
 set -e
 
-TARGET="macmini:~/dev/lyrica"
+APP_DIR="dev/lyrica"
+HOST="${DEPLOY_HOST:-macmini}"
+
+if [ "$(hostname -s)" = "mini" ]; then
+  TARGET="$HOME/$APP_DIR"
+  run() { (cd "$TARGET" && PATH="/opt/homebrew/bin:$PATH" bash -c "$1"); }
+else
+  TARGET="$HOST:~/$APP_DIR"
+  run() { ssh "$HOST" "cd ~/$APP_DIR && $1"; }
+fi
 
 echo "→ Syncing code..."
-rsync -avz --exclude-from=".rsyncignore" ./ "$TARGET/"
+rsync -az --exclude-from=".rsyncignore" ./ "$TARGET/"
 
-echo "→ Building..."
-ssh macmini "cd ~/dev/lyrica && pnpm build"
+echo "→ Installing & building..."
+run "pnpm install --frozen-lockfile && pnpm build"
 
 echo "→ Restarting..."
-ssh macmini "cd ~/dev/lyrica && pm2 restart ecosystem.config.js --update-env"
+run "pm2 restart ecosystem.config.js --update-env"
 
-echo "✓ Done — https://lyrica.ts.lkmedia.xyz"
+echo "✓ Done — https://mini.tail9026f0.ts.net:13002"

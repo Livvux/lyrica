@@ -5,3 +5,4 @@ node_modules/
 tmp/
 .git/
 ecosystem.config.js
+dist/

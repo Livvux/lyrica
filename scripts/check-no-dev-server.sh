@@ -46,7 +46,7 @@ process_is_this_checkout_dev() {
   case "$cwd" in
     "$SCRIPT_DIR"|"$SCRIPT_DIR"/*)
       case "$cmd" in
-        *"next dev"*|*"next-server"*|*".next/dev"*|*"pnpm dev"*|*"npm run dev"*|*"yarn dev"*|*"bun dev"*|*"./dev"*)
+        *"next dev"*|*".next/dev"*|*"pnpm dev"*|*"npm run dev"*|*"yarn dev"*|*"bun dev"*|*"./dev"*)
           return 0
           ;;
       esac
@@ -54,7 +54,7 @@ process_is_this_checkout_dev() {
   esac
 
   case "$cmd" in
-    *"$SCRIPT_DIR"*next\ dev*|*"$SCRIPT_DIR"*"next-server"*|*"$SCRIPT_DIR"*".next/dev"*|*"$SCRIPT_DIR"*"pnpm dev"*|*"$SCRIPT_DIR"*"npm run dev"*|*"$SCRIPT_DIR"*"yarn dev"*|*"$SCRIPT_DIR"*"bun dev"*|*"$SCRIPT_DIR"*"./dev"*)
+    *"$SCRIPT_DIR"*next\ dev*|*"$SCRIPT_DIR"*".next/dev"*|*"$SCRIPT_DIR"*"pnpm dev"*|*"$SCRIPT_DIR"*"npm run dev"*|*"$SCRIPT_DIR"*"yarn dev"*|*"$SCRIPT_DIR"*"bun dev"*|*"$SCRIPT_DIR"*"./dev"*)
       return 0
       ;;
   esac
